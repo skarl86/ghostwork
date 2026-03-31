@@ -1,0 +1,25 @@
+{
+  "name": "@paperclip/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "dependencies": {
+    "@paperclip/shared": "workspace:*",
+    "@paperclip/db": "workspace:*",
+    "@paperclip/adapters": "workspace:*",
+    "fastify": "^5.3.3"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  }
+}
