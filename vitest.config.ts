@@ -29,9 +29,9 @@ export default defineConfig({
             'packages/*/src/**/*.integration.test.ts',
             'server/src/**/*.integration.test.ts',
           ],
-          pool: 'forks',
-          poolOptions: {
-            forks: { singleFork: true },
+          isolate: true,
+          sequence: {
+            concurrent: false,
           },
         },
       },
