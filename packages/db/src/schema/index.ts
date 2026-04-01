@@ -10,6 +10,7 @@ export { projectWorkspaces } from './project-workspaces.js';
 export { executionWorkspaces } from './execution-workspaces.js';
 export { issues } from './issues.js';
 export { goals } from './goals.js';
+export { projectGoals } from './project-goals.js';
 export { heartbeatRuns } from './heartbeat-runs.js';
 export { heartbeatRunEvents } from './heartbeat-run-events.js';
 export { budgetPolicies } from './budget-policies.js';

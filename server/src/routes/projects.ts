@@ -16,12 +16,14 @@ const createBody = z.object({
   companyId: z.string().uuid(),
   name: z.string().min(1).max(200),
   description: z.string().max(2000).nullish(),
+  goalId: z.string().uuid().nullish(),
 });
 
 const updateBody = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).nullish(),
   status: z.string().optional(),
+  goalId: z.string().uuid().nullish(),
 });
 
 const idParams = z.object({ projectId: z.string().uuid() });

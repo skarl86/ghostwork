@@ -1,6 +1,7 @@
 import { pgTable, text, uuid, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { companies } from './companies.js';
 import { projects } from './projects.js';
+import { goals } from './goals.js';
 
 export const routines = pgTable('routines', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -8,6 +9,7 @@ export const routines = pgTable('routines', {
     .notNull()
     .references(() => companies.id),
   projectId: uuid('project_id').references(() => projects.id),
+  goalId: uuid('goal_id').references(() => goals.id, { onDelete: 'set null' }),
   name: text('name').notNull(),
   description: text('description'),
   status: text('status').default('active'),

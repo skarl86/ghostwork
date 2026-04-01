@@ -3,10 +3,12 @@
  */
 
 import { eq, and } from 'drizzle-orm';
-import { issues } from '@ghostwork/db';
+import { issues, projects } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import { NotFoundError, ConflictError } from '../errors.js';
 import { activityService } from './activity.js';
+import { resolveIssueGoalId, resolveNextIssueGoalId } from './issue-goal-fallback.js';
+import { getDefaultCompanyGoal } from './goals.js';
 
 export interface CreateIssueInput {
   companyId: string;
@@ -67,6 +69,27 @@ export function issueService(db: Db) {
     },
 
     async create(input: CreateIssueInput) {
+      // Resolve goalId via fallback chain if not explicitly provided
+      let goalId = input.goalId ?? null;
+      if (!goalId) {
+        let projectGoalId: string | null = null;
+        if (input.projectId) {
+          const proj = await db
+            .select({ goalId: projects.goalId })
+            .from(projects)
+            .where(eq(projects.id, input.projectId))
+            .then((rows) => rows[0] ?? null);
+          projectGoalId = proj?.goalId ?? null;
+        }
+        const defaultGoal = await getDefaultCompanyGoal(db, input.companyId);
+        goalId = resolveIssueGoalId({
+          projectId: input.projectId ?? null,
+          goalId: null,
+          projectGoalId,
+          defaultGoalId: defaultGoal?.id ?? null,
+        });
+      }
+
       const rows = await db
         .insert(issues)
         .values({
@@ -74,7 +97,7 @@ export function issueService(db: Db) {
           title: input.title,
           description: input.description ?? null,
           projectId: input.projectId ?? null,
-          goalId: input.goalId ?? null,
+          goalId,
           status: input.status ?? 'backlog',
           priority: input.priority ?? 'medium',
           assigneeAgentId: input.assigneeAgentId ?? null,
@@ -94,14 +117,47 @@ export function issueService(db: Db) {
     },
 
     async update(id: string, input: UpdateIssueInput) {
-      // Fetch current issue to detect status change
-      const existing = input.status
+      // Fetch current issue to detect status/project changes
+      const existing = (input.status || input.projectId !== undefined || input.goalId !== undefined)
         ? (await db.select().from(issues).where(eq(issues.id, id)))[0]
         : undefined;
 
+      // Re-resolve goalId when projectId changes
+      const updateData: Record<string, unknown> = { ...input, updatedAt: new Date() };
+      if (existing && input.projectId !== undefined) {
+        let currentProjectGoalId: string | null = null;
+        if (existing.projectId) {
+          const proj = await db
+            .select({ goalId: projects.goalId })
+            .from(projects)
+            .where(eq(projects.id, existing.projectId))
+            .then((rows) => rows[0] ?? null);
+          currentProjectGoalId = proj?.goalId ?? null;
+        }
+        let newProjectGoalId: string | null = null;
+        if (input.projectId) {
+          const proj = await db
+            .select({ goalId: projects.goalId })
+            .from(projects)
+            .where(eq(projects.id, input.projectId))
+            .then((rows) => rows[0] ?? null);
+          newProjectGoalId = proj?.goalId ?? null;
+        }
+        const defaultGoal = await getDefaultCompanyGoal(db, existing.companyId);
+        updateData['goalId'] = resolveNextIssueGoalId({
+          currentProjectId: existing.projectId,
+          currentGoalId: existing.goalId,
+          currentProjectGoalId,
+          projectId: input.projectId,
+          goalId: input.goalId,
+          projectGoalId: newProjectGoalId,
+          defaultGoalId: defaultGoal?.id ?? null,
+        });
+      }
+
       const rows = await db
         .update(issues)
-        .set({ ...input, updatedAt: new Date() })
+        .set(updateData)
         .where(eq(issues.id, id))
         .returning();
       const row = rows[0];
