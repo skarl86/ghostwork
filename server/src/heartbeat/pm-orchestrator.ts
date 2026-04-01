@@ -189,6 +189,13 @@ export async function createSubIssues(
     .from(agents)
     .where(eq(agents.companyId, companyId));
 
+  // If company has a plan-reviewer agent, sub-issues start as plan_review
+  const PLAN_REVIEWER_ROLES = new Set(['plan-reviewer']);
+  const hasPlanReviewer = companyAgents.some(
+    (a) => PLAN_REVIEWER_ROLES.has(a.role) && a.status !== 'terminated',
+  );
+  const initialStatus = hasPlanReviewer ? 'plan_review' : 'todo';
+
   const createdIds: string[] = [];
 
   for (const subtask of plan.subtasks) {
@@ -202,7 +209,7 @@ export async function createSubIssues(
         parentId: parentIssueId,
         title: subtask.title,
         description: subtask.description || null,
-        status: 'todo',
+        status: initialStatus,
         priority: normalizePriority(subtask.priority ?? 'medium'),
         assigneeAgentId: matchingAgent?.id ?? null,
         originKind: 'pm_subtask',

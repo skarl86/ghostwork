@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { determineStatus, APPROVAL_PATTERNS, REJECTION_PATTERNS, ACTIVE_RUN_STATUSES } from '../../heartbeat/execute.js';
+import { determineStatus, APPROVAL_PATTERNS, REJECTION_PATTERNS, ACTIVE_RUN_STATUSES, PLAN_REVIEW_ROLES, buildPlanReviewPrompt } from '../../heartbeat/execute.js';
 
 // ── determineStatus ──
 
@@ -107,12 +107,13 @@ describe('QA approval pattern matching', () => {
 // ── Issue status transition flow (documented behavior) ──
 
 describe('Issue status transition flow', () => {
-  type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'blocked' | 'cancelled';
+  type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'plan_review' | 'done' | 'blocked' | 'cancelled';
 
   const ISSUE_TRANSITIONS: Record<string, IssueStatus[]> = {
     backlog: ['in_progress'],
     todo: ['in_progress'],
-    in_progress: ['done', 'in_review', 'todo', 'blocked'],
+    plan_review: ['in_progress'],
+    in_progress: ['done', 'in_review', 'todo', 'blocked', 'backlog'],
     in_review: ['done', 'todo'],
     // done, blocked, cancelled are terminal or require manual intervention
   };
@@ -125,10 +126,12 @@ describe('Issue status transition flow', () => {
     it.each<[IssueStatus, IssueStatus, string]>([
       ['backlog', 'in_progress', 'agent checks out issue'],
       ['todo', 'in_progress', 'agent checks out issue'],
+      ['plan_review', 'in_progress', 'plan-reviewer checks out issue'],
       ['in_progress', 'done', 'QA approved or no QA agent'],
       ['in_progress', 'in_review', 'developer done, QA agent exists'],
       ['in_progress', 'todo', 'run failed, reverts to todo'],
       ['in_progress', 'blocked', 'PM parse failed'],
+      ['in_progress', 'backlog', 'plan-reviewer rejected, back to PM'],
       ['in_review', 'done', 'QA approved'],
       ['in_review', 'todo', 'QA rejected, back to developer'],
     ])('%s → %s (%s)', (from, to) => {
@@ -306,5 +309,134 @@ describe('ACTIVE_RUN_STATUSES', () => {
     for (const status of terminalStatuses) {
       expect(ACTIVE_RUN_STATUSES).not.toContain(status);
     }
+  });
+});
+
+// ── PLAN_REVIEW_ROLES ──
+
+describe('PLAN_REVIEW_ROLES', () => {
+  it('includes plan-reviewer', () => {
+    expect(PLAN_REVIEW_ROLES.has('plan-reviewer')).toBe(true);
+  });
+
+  it('does not include other roles', () => {
+    expect(PLAN_REVIEW_ROLES.has('engineer')).toBe(false);
+    expect(PLAN_REVIEW_ROLES.has('qa')).toBe(false);
+    expect(PLAN_REVIEW_ROLES.has('pm')).toBe(false);
+    expect(PLAN_REVIEW_ROLES.has('reviewer')).toBe(false);
+  });
+});
+
+// ── Plan Review Workflow ──
+
+describe('Plan review workflow', () => {
+  describe('plan-reviewer completion behavior', () => {
+    it('plan-reviewer APPROVED → issue status todo', () => {
+      const summary = 'APPROVED - task is clear and executable';
+      const isRejected = REJECTION_PATTERNS.some((p) => p.test(summary));
+      const isApproved = !isRejected && APPROVAL_PATTERNS.some((p) => p.test(summary));
+      const nextStatus = isApproved ? 'todo' : 'backlog';
+      expect(nextStatus).toBe('todo');
+    });
+
+    it('plan-reviewer REJECTED → issue status backlog', () => {
+      const summary = 'REJECTED: missing acceptance criteria and unclear scope';
+      const isRejected = REJECTION_PATTERNS.some((p) => p.test(summary));
+      const isApproved = !isRejected && APPROVAL_PATTERNS.some((p) => p.test(summary));
+      const nextStatus = isApproved ? 'todo' : 'backlog';
+      expect(nextStatus).toBe('backlog');
+    });
+
+    it('plan-reviewer ambiguous summary → issue status backlog (safe default)', () => {
+      const summary = 'The plan needs more detail on error handling';
+      const isRejected = REJECTION_PATTERNS.some((p) => p.test(summary));
+      const isApproved = !isRejected && APPROVAL_PATTERNS.some((p) => p.test(summary));
+      const nextStatus = isApproved ? 'todo' : 'backlog';
+      expect(nextStatus).toBe('backlog');
+    });
+
+    it('plan-reviewer "looks good" → issue status todo', () => {
+      const summary = 'Looks good - all references exist and criteria are clear';
+      const isRejected = REJECTION_PATTERNS.some((p) => p.test(summary));
+      const isApproved = !isRejected && APPROVAL_PATTERNS.some((p) => p.test(summary));
+      const nextStatus = isApproved ? 'todo' : 'backlog';
+      expect(nextStatus).toBe('todo');
+    });
+  });
+
+  describe('plan-reviewer only picks up plan_review status', () => {
+    it('plan-reviewer role is recognized', () => {
+      expect(PLAN_REVIEW_ROLES.has('plan-reviewer')).toBe(true);
+    });
+
+    it('developer roles are not plan-reviewers', () => {
+      const devRoles = ['engineer', 'developer', 'general'];
+      for (const role of devRoles) {
+        expect(PLAN_REVIEW_ROLES.has(role)).toBe(false);
+      }
+    });
+
+    it('QA roles are not plan-reviewers', () => {
+      const qaRoles = ['qa', 'reviewer', '리뷰어'];
+      for (const role of qaRoles) {
+        expect(PLAN_REVIEW_ROLES.has(role)).toBe(false);
+      }
+    });
+  });
+
+  describe('PM sub-issue status depends on plan-reviewer existence', () => {
+    it('with plan-reviewer agent → sub-issues created as plan_review', () => {
+      const companyAgents = [
+        { id: '1', role: 'engineer', status: 'idle' },
+        { id: '2', role: 'plan-reviewer', status: 'idle' },
+      ];
+      const hasPlanReviewer = companyAgents.some(
+        (a) => PLAN_REVIEW_ROLES.has(a.role) && a.status !== 'terminated',
+      );
+      const initialStatus = hasPlanReviewer ? 'plan_review' : 'todo';
+      expect(initialStatus).toBe('plan_review');
+    });
+
+    it('without plan-reviewer agent → sub-issues created as todo (backward compat)', () => {
+      const companyAgents = [
+        { id: '1', role: 'engineer', status: 'idle' },
+        { id: '2', role: 'qa', status: 'idle' },
+      ];
+      const hasPlanReviewer = companyAgents.some(
+        (a) => PLAN_REVIEW_ROLES.has(a.role) && a.status !== 'terminated',
+      );
+      const initialStatus = hasPlanReviewer ? 'plan_review' : 'todo';
+      expect(initialStatus).toBe('todo');
+    });
+
+    it('terminated plan-reviewer agent is ignored', () => {
+      const companyAgents = [
+        { id: '1', role: 'engineer', status: 'idle' },
+        { id: '2', role: 'plan-reviewer', status: 'terminated' },
+      ];
+      const hasPlanReviewer = companyAgents.some(
+        (a) => PLAN_REVIEW_ROLES.has(a.role) && a.status !== 'terminated',
+      );
+      const initialStatus = hasPlanReviewer ? 'plan_review' : 'todo';
+      expect(initialStatus).toBe('todo');
+    });
+  });
+});
+
+// ── buildPlanReviewPrompt ──
+
+describe('buildPlanReviewPrompt', () => {
+  it('includes issue title and description', () => {
+    const prompt = buildPlanReviewPrompt({ title: 'Add auth', description: 'Implement JWT auth' });
+    expect(prompt).toContain('Add auth');
+    expect(prompt).toContain('Implement JWT auth');
+    expect(prompt).toContain('APPROVED');
+    expect(prompt).toContain('REJECTED');
+  });
+
+  it('handles null description', () => {
+    const prompt = buildPlanReviewPrompt({ title: 'Fix bug', description: null });
+    expect(prompt).toContain('Fix bug');
+    expect(prompt).toContain('(No description)');
   });
 });

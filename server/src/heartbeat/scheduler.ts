@@ -8,7 +8,7 @@ import type { Db } from '@ghostwork/db';
 import { enqueueWakeup } from './queue.js';
 import { resumeQueuedRuns } from './queue.js';
 import { reapOrphanedRuns } from './orphans.js';
-import { executeRun, QA_ROLES } from './execute.js';
+import { executeRun, QA_ROLES, PLAN_REVIEW_ROLES } from './execute.js';
 import type { ProcessHandle } from './types.js';
 import type { LiveEventBus } from '../realtime/live-events.js';
 import type { AdapterRegistry } from '@ghostwork/adapters';
@@ -111,7 +111,27 @@ export function createScheduler(
           );
       }
 
-      const allIssues = [...assignedIssues, ...qaIssues];
+      // Plan-reviewer agents: pick up unassigned plan_review issues from their company
+      let planReviewIssues: { id: string; title: string; description: string | null; goalId: string | null }[] = [];
+      if (PLAN_REVIEW_ROLES.has(agent.role)) {
+        planReviewIssues = await db
+          .select({
+            id: issues.id,
+            title: issues.title,
+            description: issues.description,
+            goalId: issues.goalId,
+          })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.companyId, agent.companyId),
+              eq(issues.status, 'plan_review'),
+              isNull(issues.executionRunId),
+            ),
+          );
+      }
+
+      const allIssues = [...assignedIssues, ...qaIssues, ...planReviewIssues];
       // Deduplicate by id
       const seen = new Set<string>();
       const uniqueIssues = allIssues.filter((i) => {
