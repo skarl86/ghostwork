@@ -2,13 +2,13 @@
  * Heartbeat Scheduler — setInterval-based loop that drives agent execution.
  */
 
-import { eq, and, or, inArray, isNull, desc } from 'drizzle-orm';
+import { eq, and, or, inArray, isNull, isNotNull, desc, lt, ne } from 'drizzle-orm';
 import { agents, heartbeatRuns, issues, goals } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import { enqueueWakeup } from './queue.js';
 import { resumeQueuedRuns } from './queue.js';
 import { reapOrphanedRuns } from './orphans.js';
-import { executeRun, QA_ROLES, PLAN_REVIEW_ROLES } from './execute.js';
+import { executeRun, QA_ROLES, PLAN_REVIEW_ROLES, DEVELOPER_ROLES } from './execute.js';
 import type { ProcessHandle } from './types.js';
 import type { LiveEventBus } from '../realtime/live-events.js';
 import type { AdapterRegistry } from '@ghostwork/adapters';
@@ -24,6 +24,44 @@ export interface Scheduler {
   /** Manually trigger a single tick (for testing). */
   tick(): Promise<void>;
   readonly runningProcesses: Map<string, ProcessHandle>;
+}
+
+/**
+ * Check if a sub-task can be picked up based on sortOrder.
+ * Returns true if the issue is not a sub-task (no parentId),
+ * or if all earlier siblings (lower sortOrder) are done.
+ */
+async function canPickUpSubTask(db: Db, issueId: string): Promise<boolean> {
+  const rows = await db
+    .select({
+      parentId: issues.parentId,
+      sortOrder: issues.sortOrder,
+    })
+    .from(issues)
+    .where(eq(issues.id, issueId))
+    .limit(1);
+
+  const issue = rows[0];
+  if (!issue?.parentId || issue.sortOrder === null) {
+    // Not a sub-task or no sortOrder — no sequential constraint
+    return true;
+  }
+
+  // Check if any sibling with lower sortOrder is not done
+  const pendingSiblings = await db
+    .select({ id: issues.id })
+    .from(issues)
+    .where(
+      and(
+        eq(issues.parentId, issue.parentId),
+        isNotNull(issues.sortOrder),
+        lt(issues.sortOrder, issue.sortOrder),
+        ne(issues.status, 'done'),
+      ),
+    )
+    .limit(1);
+
+  return pendingSiblings.length === 0;
 }
 
 /**
@@ -154,11 +192,22 @@ export function createScheduler(
       const allIssues = [...assignedIssues, ...qaIssues, ...planReviewIssues, ...planRejectedIssues];
       // Deduplicate by id
       const seen = new Set<string>();
-      const uniqueIssues = allIssues.filter((i) => {
+      let uniqueIssues = allIssues.filter((i) => {
         if (seen.has(i.id)) return false;
         seen.add(i.id);
         return true;
       });
+
+      // Enforce sequential execution for developer sub-tasks with sortOrder
+      if (DEVELOPER_ROLES.has(agent.role)) {
+        const filtered: typeof uniqueIssues = [];
+        for (const issue of uniqueIssues) {
+          if (await canPickUpSubTask(db, issue.id)) {
+            filtered.push(issue);
+          }
+        }
+        uniqueIssues = filtered;
+      }
 
       if (uniqueIssues.length === 0) continue;
 
