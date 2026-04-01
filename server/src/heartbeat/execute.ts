@@ -160,6 +160,15 @@ export async function executeRun(
     .set({ status: 'running', updatedAt: new Date() })
     .where(eq(agents.id, agent.id));
 
+  eventBus?.publish({
+    companyId: run.companyId,
+    type: 'agent.status',
+    payload: {
+      agentId: agent.id,
+      status: 'running',
+    },
+  });
+
   // Publish run status → running
   eventBus?.publish({
     companyId: run.companyId,
