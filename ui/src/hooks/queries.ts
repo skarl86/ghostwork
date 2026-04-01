@@ -43,6 +43,7 @@ import {
   fetchProjectWorkspace,
   setProjectWorkspace,
   updateProjectWorkspace,
+  fetchWorkProducts,
 } from '@/lib/api';
 
 // ── Query Keys ──
@@ -71,6 +72,7 @@ export const queryKeys = {
   adapterModels: (adapterType: string) => ['adapterModels', adapterType] as const,
   projects: (companyId: string) => ['projects', companyId] as const,
   projectWorkspace: (projectId: string) => ['projectWorkspace', projectId] as const,
+  workProducts: (issueId: string) => ['workProducts', issueId] as const,
 };
 
 // ── Companies ──
@@ -485,6 +487,16 @@ export function useUpdateProjectWorkspace() {
         void qc.invalidateQueries({ queryKey: queryKeys.projectWorkspace(result.projectId) });
       }
     },
+  });
+}
+
+// ── Work Products ──
+
+export function useWorkProducts(issueId: string) {
+  return useQuery({
+    queryKey: queryKeys.workProducts(issueId),
+    queryFn: () => fetchWorkProducts(issueId),
+    enabled: !!issueId,
   });
 }
 

@@ -499,6 +499,34 @@ export function rejectIssue(issueId: string, reason: string) {
   );
 }
 
+// ── Work Products ──
+
+export interface WorkProduct {
+  id: string;
+  companyId: string;
+  projectId?: string | null;
+  issueId: string;
+  executionWorkspaceId?: string | null;
+  type: string;
+  provider: string;
+  externalId?: string | null;
+  title: string;
+  url?: string | null;
+  status: string;
+  reviewState: string;
+  isPrimary: boolean;
+  healthStatus: string;
+  summary?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdByRunId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchWorkProducts(issueId: string) {
+  return api.get<WorkProduct[]>(`/issues/${issueId}/work-products`);
+}
+
 // ── Projects ──
 
 export interface ProjectWorkspace {
