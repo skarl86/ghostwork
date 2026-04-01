@@ -4,13 +4,38 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import type { Db } from '@ghostwork/db';
+import { eq } from 'drizzle-orm';
+import { heartbeatRuns, type Db } from '@ghostwork/db';
 import { issueService } from '../services/issues.js';
 import { workProductService } from '../services/work-products.js';
 import { checkoutIssue, releaseAndPromote } from '../heartbeat/checkout.js';
 import { requireActor } from '../hooks/require-actor.js';
+import { completeRun } from '../heartbeat/completion.js';
 
-const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'plan_review', 'done', 'closed', 'cancelled'] as const;
+/**
+ * Cancel a run if it is still in an active (non-terminal) state.
+ * - running → cancelled via state-machine-safe completeRun
+ * - queued / deferred_issue_execution → direct DB update (no valid SM transition)
+ */
+async function cancelRunIfActive(db: Db, runId: string): Promise<void> {
+  const rows = await db
+    .select({ id: heartbeatRuns.id, status: heartbeatRuns.status })
+    .from(heartbeatRuns)
+    .where(eq(heartbeatRuns.id, runId));
+  const run = rows[0];
+  if (!run) return;
+
+  if (run.status === 'running') {
+    await completeRun(db, runId, 'cancelled', { summary: 'Cancelled via issue cancellation' });
+  } else if (run.status === 'queued' || run.status === 'deferred_issue_execution') {
+    await db
+      .update(heartbeatRuns)
+      .set({ status: 'cancelled', completedAt: new Date() })
+      .where(eq(heartbeatRuns.id, runId));
+  }
+}
+
+const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'plan_review', 'plan_rejected', 'done', 'closed', 'cancelled'] as const;
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
 const createBody = z.object({
@@ -117,6 +142,17 @@ export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => 
   app.patch('/issues/:issueId', { schema: { params: idParams, body: updateBody }, preHandler: [requireActor] }, async (request) => {
     const { issueId } = idParams.parse(request.params);
     const body = updateBody.parse(request.body);
+
+    if (body.status === 'cancelled') {
+      const cancelled = await svc.cancelWithCascade(issueId);
+      for (const issue of cancelled) {
+        if (issue.executionRunId) {
+          await cancelRunIfActive(db, issue.executionRunId).catch(() => undefined);
+        }
+      }
+      return svc.getById(issueId);
+    }
+
     return svc.update(issueId, body);
   });
 
@@ -147,7 +183,6 @@ export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => 
   app.post('/issues/:issueId/reject', { preHandler: [requireActor] }, async (request, reply) => {
     const { issueId } = idParams.parse(request.params);
     const { reason } = rejectBody.parse(request.body);
-    const svc = issueService(db);
 
     // Reset main issue to backlog
     const updated = await svc.update(issueId, {
@@ -156,15 +191,22 @@ export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => 
       executionLockedAt: null,
     } as Record<string, unknown>);
 
-    // Cancel all sub-issues
-    const allIssues = await svc.list({ companyId: updated.companyId, parentId: issueId });
-    for (const sub of allIssues) {
-      if (sub.status !== 'cancelled' && sub.status !== 'done') {
-        await svc.update(sub.id, { status: 'cancelled' });
+    // Recursively cancel all sub-issues and stop their runs
+    const children = await svc.list({ companyId: updated.companyId, parentId: issueId });
+    let cancelledCount = 0;
+    for (const child of children) {
+      if (child.status !== 'cancelled' && child.status !== 'done') {
+        const cancelled = await svc.cancelWithCascade(child.id);
+        for (const issue of cancelled) {
+          if (issue.executionRunId) {
+            await cancelRunIfActive(db, issue.executionRunId).catch(() => undefined);
+          }
+        }
+        cancelledCount += cancelled.length;
       }
     }
 
-    return reply.code(200).send({ rejected: true, reason, cancelledSubIssues: allIssues.length });
+    return reply.code(200).send({ rejected: true, reason, cancelledSubIssues: cancelledCount });
   });
 
   // ── Completion Report ──

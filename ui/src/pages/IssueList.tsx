@@ -44,6 +44,7 @@ const COLUMNS = [
   { id: 'backlog', label: 'Backlog' },
   { id: 'todo', label: 'Todo' },
   { id: 'plan_review', label: 'Plan Review' },
+  { id: 'plan_rejected', label: 'Plan Rejected' },
   { id: 'in_progress', label: 'In Progress' },
   { id: 'in_review', label: 'In Review' },
   { id: 'blocked', label: 'Blocked' },
@@ -58,8 +59,9 @@ const priorityVariant: Record<string, 'default' | 'destructive' | 'warning' | 'i
   low: 'secondary',
 };
 
-const statusVariant: Record<string, 'default' | 'secondary' | 'success' | 'warning' | 'info' | 'purple'> = {
+const statusVariant: Record<string, 'default' | 'secondary' | 'success' | 'warning' | 'info' | 'purple' | 'destructive'> = {
   plan_review: 'purple',
+  plan_rejected: 'destructive',
   in_progress: 'info',
   in_review: 'warning',
   done: 'success',
