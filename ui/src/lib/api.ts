@@ -530,3 +530,7 @@ export function setProjectWorkspace(projectId: string, data: { cwd: string; repo
 export function updateProjectWorkspace(projectId: string, data: { cwd?: string; repoUrl?: string; branch?: string }) {
   return api.patch<ProjectWorkspace>(`/projects/${projectId}/workspace`, data);
 }
+
+export function validateWorkspacePath(cwd: string) {
+  return api.post<{ valid: boolean; reason?: string }>('/projects/workspace/validate', { cwd });
+}

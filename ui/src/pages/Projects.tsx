@@ -28,8 +28,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ChevronDown, ChevronRight, FolderKanban, Plus } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, FolderCheck, FolderKanban, Plus, XCircle } from 'lucide-react';
 import type { Project, ProjectWorkspace } from '@/lib/api';
+import { validateWorkspacePath } from '@/lib/api';
 
 function statusVariant(status: string) {
   switch (status) {
@@ -50,6 +51,8 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
   const updateWorkspace = useUpdateProjectWorkspace();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ cwd: '', repoUrl: '', branch: '' });
+  const [validating, setValidating] = useState(false);
+  const [validation, setValidation] = useState<{ valid: boolean; reason?: string } | null>(null);
 
   const startEdit = (ws?: ProjectWorkspace | null) => {
     setForm({
@@ -57,7 +60,22 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
       repoUrl: ws?.repoUrl ?? '',
       branch: ws?.branch ?? '',
     });
+    setValidation(null);
     setEditing(true);
+  };
+
+  const handleValidate = async () => {
+    if (!form.cwd.trim()) return;
+    setValidating(true);
+    setValidation(null);
+    try {
+      const result = await validateWorkspacePath(form.cwd.trim());
+      setValidation(result);
+    } catch {
+      setValidation({ valid: false, reason: 'Failed to validate path' });
+    } finally {
+      setValidating(false);
+    }
   };
 
   const handleSave = () => {
@@ -92,12 +110,37 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
       <div className="space-y-3 py-2">
         <div className="grid gap-2">
           <Label htmlFor={`ws-cwd-${projectId}`}>Working Directory (cwd)</Label>
-          <Input
-            id={`ws-cwd-${projectId}`}
-            value={form.cwd}
-            onChange={(e) => setForm((f) => ({ ...f, cwd: e.target.value }))}
-            placeholder="/path/to/project"
-          />
+          <div className="flex gap-2">
+            <Input
+              id={`ws-cwd-${projectId}`}
+              value={form.cwd}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, cwd: e.target.value }));
+                setValidation(null);
+              }}
+              placeholder="/path/to/project"
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleValidate}
+              disabled={validating || !form.cwd.trim()}
+            >
+              <FolderCheck className="mr-1 h-4 w-4" />
+              {validating ? 'Checking...' : 'Verify'}
+            </Button>
+          </div>
+          {validation && (
+            <div className={`flex items-center gap-1.5 text-sm ${validation.valid ? 'text-green-600' : 'text-red-600'}`}>
+              {validation.valid ? (
+                <><CheckCircle className="h-4 w-4" /> Valid path</>
+              ) : (
+                <><XCircle className="h-4 w-4" /> {validation.reason}</>
+              )}
+            </div>
+          )}
         </div>
         <div className="grid gap-2">
           <Label htmlFor={`ws-repo-${projectId}`}>Repository URL</Label>

@@ -5,6 +5,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
+import { stat } from 'node:fs/promises';
 import type { Db } from '@ghostwork/db';
 import { projectWorkspaces } from '@ghostwork/db';
 import { projectService } from '../services/projects.js';
@@ -134,5 +135,32 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) =
       .where(eq(projectWorkspaces.projectId, projectId))
       .returning();
     return updated[0];
+  });
+
+  // ── Validate workspace path ──
+
+  const validateBody = z.object({
+    cwd: z.string().min(1).max(1000),
+  });
+
+  app.post('/projects/workspace/validate', { schema: { body: validateBody }, preHandler: [requireActor] }, async (request) => {
+    const { cwd } = validateBody.parse(request.body);
+
+    try {
+      const stats = await stat(cwd);
+      if (!stats.isDirectory()) {
+        return { valid: false, reason: 'Path exists but is not a directory' };
+      }
+      return { valid: true };
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        return { valid: false, reason: 'Directory does not exist' };
+      }
+      if (code === 'EACCES') {
+        return { valid: false, reason: 'Permission denied' };
+      }
+      return { valid: false, reason: 'Unable to access path' };
+    }
   });
 };

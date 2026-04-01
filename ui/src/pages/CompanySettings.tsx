@@ -8,13 +8,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Settings, Save, FolderOpen, Pencil } from 'lucide-react';
-import { fetchProjects, fetchProjectWorkspace, setProjectWorkspace, type Project } from '@/lib/api';
+import { CheckCircle, FolderCheck, Settings, Save, FolderOpen, Pencil, XCircle } from 'lucide-react';
+import { fetchProjects, fetchProjectWorkspace, setProjectWorkspace, validateWorkspacePath, type Project } from '@/lib/api';
 
 function ProjectWorkspaceRow({ project }: { project: Project }) {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [cwdInput, setCwdInput] = useState('');
+  const [validating, setValidating] = useState(false);
+  const [validation, setValidation] = useState<{ valid: boolean; reason?: string } | null>(null);
 
   const { data: workspace, isLoading } = useQuery({
     queryKey: ['project-workspace', project.id],
@@ -31,7 +33,22 @@ function ProjectWorkspaceRow({ project }: { project: Project }) {
 
   const openDialog = () => {
     setCwdInput(workspace?.cwd ?? '');
+    setValidation(null);
     setDialogOpen(true);
+  };
+
+  const handleValidate = async () => {
+    if (!cwdInput.trim()) return;
+    setValidating(true);
+    setValidation(null);
+    try {
+      const result = await validateWorkspacePath(cwdInput.trim());
+      setValidation(result);
+    } catch {
+      setValidation({ valid: false, reason: 'Failed to validate path' });
+    } finally {
+      setValidating(false);
+    }
   };
 
   return (
@@ -59,13 +76,37 @@ function ProjectWorkspaceRow({ project }: { project: Project }) {
           </DialogHeader>
           <div className="space-y-2 py-2">
             <Label htmlFor="workspace-cwd">Working Directory (cwd)</Label>
-            <Input
-              id="workspace-cwd"
-              value={cwdInput}
-              onChange={(e) => setCwdInput(e.target.value)}
-              placeholder="/path/to/project"
-              className="font-mono text-sm"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="workspace-cwd"
+                value={cwdInput}
+                onChange={(e) => {
+                  setCwdInput(e.target.value);
+                  setValidation(null);
+                }}
+                placeholder="/path/to/project"
+                className="flex-1 font-mono text-sm"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleValidate}
+                disabled={validating || !cwdInput.trim()}
+              >
+                <FolderCheck className="mr-1 h-4 w-4" />
+                {validating ? 'Checking...' : 'Verify'}
+              </Button>
+            </div>
+            {validation && (
+              <div className={`flex items-center gap-1.5 text-sm ${validation.valid ? 'text-green-600' : 'text-red-600'}`}>
+                {validation.valid ? (
+                  <><CheckCircle className="h-4 w-4" /> Valid path</>
+                ) : (
+                  <><XCircle className="h-4 w-4" /> {validation.reason}</>
+                )}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
               Agents working on issues in this project will use this directory.
             </p>
