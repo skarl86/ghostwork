@@ -83,8 +83,11 @@ const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
 /** Roles considered QA/reviewer (auto-pick in_review issues) */
 export const QA_ROLES = new Set(['qa', 'reviewer', '리뷰어']);
 
+/** Explicit rejection patterns — checked BEFORE approval to avoid false positives */
+export const REJECTION_PATTERNS = [/\brejected?\b/i, /\bfail(ed|ure|s)?\b/i, /\bnot\s+approved?\b/i];
+
 /** Approval signal patterns in QA run summaries */
-export const APPROVAL_PATTERNS = [/\bapproved?\b/i, /\bpass(ed)?\b/i, /\blooks?\s*good\b/i, /\blgtm\b/i];
+export const APPROVAL_PATTERNS = [/\bapproved?\b/i, /\blooks?\s*good\b/i, /\blgtm\b/i];
 
 export interface ExecuteRunInput {
   run: {
@@ -690,7 +693,10 @@ async function handleSuccessfulIssueCompletion(
     }
   } else if (QA_ROLES.has(role)) {
     // QA agent — parse approval from summary
-    const isApproved = APPROVAL_PATTERNS.some((pattern) => pattern.test(summary));
+    // Check rejection FIRST — prevents false positives when summary contains
+    // words like "approved" in explanatory text after a REJECTED verdict
+    const isRejected = REJECTION_PATTERNS.some((pattern) => pattern.test(summary));
+    const isApproved = !isRejected && APPROVAL_PATTERNS.some((pattern) => pattern.test(summary));
 
     if (isApproved) {
       await db
