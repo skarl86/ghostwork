@@ -6,6 +6,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { stat } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import type { Db } from '@ghostwork/db';
 import { projectWorkspaces } from '@ghostwork/db';
 import { projectService } from '../services/projects.js';
@@ -162,5 +163,35 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) =
       }
       return { valid: false, reason: 'Unable to access path' };
     }
+  });
+
+  // ── Validate repository URL ──
+
+  const validateRepoBody = z.object({
+    repoUrl: z.string().min(1).max(1000),
+  });
+
+  app.post('/projects/workspace/validate-repo', { schema: { body: validateRepoBody }, preHandler: [requireActor] }, async (request) => {
+    const { repoUrl } = validateRepoBody.parse(request.body);
+
+    // Basic URL format check
+    if (!/^https?:\/\/.+/.test(repoUrl) && !repoUrl.includes('@')) {
+      return { valid: false, reason: 'Invalid repository URL format' };
+    }
+
+    return new Promise<{ valid: boolean; reason?: string }>((resolve) => {
+      execFile('git', ['ls-remote', '--exit-code', '--heads', repoUrl], { timeout: 10_000 }, (err) => {
+        if (err) {
+          const exitCode = (err as NodeJS.ErrnoException & { code?: number | string }).code;
+          if (exitCode === 'ETIMEDOUT' || err.killed) {
+            resolve({ valid: false, reason: 'Connection timed out' });
+          } else {
+            resolve({ valid: false, reason: 'Repository not found or not accessible' });
+          }
+        } else {
+          resolve({ valid: true });
+        }
+      });
+    });
   });
 };

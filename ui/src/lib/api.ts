@@ -534,3 +534,7 @@ export function updateProjectWorkspace(projectId: string, data: { cwd?: string; 
 export function validateWorkspacePath(cwd: string) {
   return api.post<{ valid: boolean; reason?: string }>('/projects/workspace/validate', { cwd });
 }
+
+export function validateRepoUrl(repoUrl: string) {
+  return api.post<{ valid: boolean; reason?: string }>('/projects/workspace/validate-repo', { repoUrl });
+}
