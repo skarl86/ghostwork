@@ -2,10 +2,50 @@
  * Goal service — CRUD operations for goals.
  */
 
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { goals } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import { NotFoundError, ConflictError } from '../errors.js';
+
+type GoalReader = Pick<Db, 'select'>;
+
+export async function getDefaultCompanyGoal(db: GoalReader, companyId: string) {
+  const activeRootGoal = await db
+    .select()
+    .from(goals)
+    .where(
+      and(
+        eq(goals.companyId, companyId),
+        eq(goals.level, 'company'),
+        eq(goals.status, 'active'),
+        isNull(goals.parentId),
+      ),
+    )
+    .orderBy(asc(goals.createdAt))
+    .then((rows) => rows[0] ?? null);
+  if (activeRootGoal) return activeRootGoal;
+
+  const anyRootGoal = await db
+    .select()
+    .from(goals)
+    .where(
+      and(
+        eq(goals.companyId, companyId),
+        eq(goals.level, 'company'),
+        isNull(goals.parentId),
+      ),
+    )
+    .orderBy(asc(goals.createdAt))
+    .then((rows) => rows[0] ?? null);
+  if (anyRootGoal) return anyRootGoal;
+
+  return db
+    .select()
+    .from(goals)
+    .where(and(eq(goals.companyId, companyId), eq(goals.level, 'company')))
+    .orderBy(asc(goals.createdAt))
+    .then((rows) => rows[0] ?? null);
+}
 
 export interface CreateGoalInput {
   companyId: string;

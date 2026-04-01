@@ -3,7 +3,7 @@
  */
 
 import { eq, and, or, inArray, isNull, desc } from 'drizzle-orm';
-import { agents, heartbeatRuns, issues } from '@ghostwork/db';
+import { agents, heartbeatRuns, issues, goals } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import { enqueueWakeup } from './queue.js';
 import { resumeQueuedRuns } from './queue.js';
@@ -80,6 +80,7 @@ export function createScheduler(
           id: issues.id,
           title: issues.title,
           description: issues.description,
+          goalId: issues.goalId,
         })
         .from(issues)
         .where(
@@ -91,13 +92,14 @@ export function createScheduler(
         );
 
       // QA agents: also pick up unassigned in_review issues from their company
-      let qaIssues: { id: string; title: string; description: string | null }[] = [];
+      let qaIssues: { id: string; title: string; description: string | null; goalId: string | null }[] = [];
       if (QA_ROLES.has(agent.role)) {
         qaIssues = await db
           .select({
             id: issues.id,
             title: issues.title,
             description: issues.description,
+            goalId: issues.goalId,
           })
           .from(issues)
           .where(
@@ -139,6 +141,23 @@ export function createScheduler(
           previousRunSummary = prevRuns[0]?.summary ?? undefined;
         }
 
+        // Fetch goal context if issue has a goalId
+        let goalContext: { goalTitle: string; goalDescription: string } | undefined;
+        if (issue.goalId) {
+          const goalRows = await db
+            .select({ title: goals.title, description: goals.description })
+            .from(goals)
+            .where(eq(goals.id, issue.goalId))
+            .limit(1);
+          const goal = goalRows[0];
+          if (goal) {
+            goalContext = {
+              goalTitle: goal.title,
+              goalDescription: goal.description ?? '',
+            };
+          }
+        }
+
         await enqueueWakeup(db, {
           companyId: agent.companyId,
           agentId: agent.id,
@@ -148,6 +167,7 @@ export function createScheduler(
             issueId: issue.id,
             issueTitle: issue.title,
             issueDescription: issue.description ?? '',
+            ...(goalContext ?? {}),
             ...(previousRunSummary ? { previousRunSummary } : {}),
           },
           reason: 'timer',

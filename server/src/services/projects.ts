@@ -11,12 +11,14 @@ export interface CreateProjectInput {
   companyId: string;
   name: string;
   description?: string | null;
+  goalId?: string | null;
 }
 
 export interface UpdateProjectInput {
   name?: string;
   description?: string | null;
   status?: string;
+  goalId?: string | null;
 }
 
 export function projectService(db: Db) {
@@ -50,6 +52,7 @@ export function projectService(db: Db) {
           companyId: input.companyId,
           name: input.name,
           description: input.description ?? null,
+          goalId: input.goalId ?? null,
         })
         .returning();
       const row = rows[0];
