@@ -45,7 +45,7 @@ export function IssueDetail() {
   const { data: runs } = useRuns(companyId);
   const { data: agentsList } = useAgents(companyId);
   const { data: subIssues } = useSubIssues(issueId ?? '');
-  const { data: workProducts } = useWorkProducts(issueId ?? '');
+  const { data: workProducts, isLoading: isLoadingWorkProducts } = useWorkProducts(issueId ?? '');
   const updateMutation = useUpdateIssue();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
@@ -317,7 +317,7 @@ export function IssueDetail() {
       )}
 
       {/* Work Products */}
-      <WorkProductsSection workProducts={workProducts} />
+      <WorkProductsSection workProducts={workProducts} isLoading={isLoadingWorkProducts} />
 
       {/* Completion Report + Reject/Retry */}
       {issue?.status === 'done' && (
@@ -348,14 +348,16 @@ const reviewVariant: Record<string, 'success' | 'destructive' | 'secondary'> = {
   none: 'secondary',
 };
 
-function WorkProductsSection({ workProducts }: { workProducts?: WorkProduct[] }) {
+function WorkProductsSection({ workProducts, isLoading }: { workProducts?: WorkProduct[]; isLoading: boolean }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Work Products</CardTitle>
       </CardHeader>
       <CardContent>
-        {!workProducts || workProducts.length === 0 ? (
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading work products...</p>
+        ) : !workProducts || workProducts.length === 0 ? (
           <p className="text-sm text-muted-foreground">No work products yet</p>
         ) : (
           <Table>
@@ -393,13 +395,9 @@ function WorkProductsSection({ workProducts }: { workProducts?: WorkProduct[] })
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {wp.reviewState !== 'none' ? (
-                      <Badge variant={reviewVariant[wp.reviewState] ?? 'secondary'}>
-                        {wp.reviewState.replace('_', ' ')}
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                    <Badge variant={reviewVariant[wp.reviewState] ?? 'secondary'}>
+                      {wp.reviewState.replace('_', ' ')}
+                    </Badge>
                   </TableCell>
                 </TableRow>
               ))}
