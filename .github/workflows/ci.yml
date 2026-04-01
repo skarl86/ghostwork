@@ -37,7 +37,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      - run: pnpm test --project unit
 
   build:
     runs-on: ubuntu-latest

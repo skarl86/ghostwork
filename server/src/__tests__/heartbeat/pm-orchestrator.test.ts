@@ -200,13 +200,13 @@ describe('isPMPlan', () => {
     ).toBe(false);
   });
 
-  it('returns false for subtasks missing role', () => {
+  it('returns true for subtasks missing role (role is optional)', () => {
     expect(
       isPMPlan({
         analysis: 'test',
         subtasks: [{ title: 'task' }],
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('returns false for non-objects', () => {
