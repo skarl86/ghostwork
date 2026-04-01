@@ -14,9 +14,9 @@ import {
 import { RunTranscriptView } from '@/components/RunTranscript';
 import { Progress } from '@/components/ui/progress';
 import { useCompanyContext } from '@/providers/CompanyProvider';
-import { useIssue, useRuns, useAgents, useUpdateIssue, useSubIssues, useIssueReport, useRejectIssue } from '@/hooks/queries';
+import { useIssue, useRuns, useAgents, useUpdateIssue, useSubIssues, useIssueReport, useRejectIssue, useWorkProducts } from '@/hooks/queries';
 import { useQuery } from '@tanstack/react-query';
-import type { IssueStatus, Agent } from '@/lib/api';
+import type { IssueStatus, Agent, WorkProduct } from '@/lib/api';
 import { fetchProjectWorkspace } from '@/lib/api';
 import { useState, useMemo } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -45,6 +45,7 @@ export function IssueDetail() {
   const { data: runs } = useRuns(companyId);
   const { data: agentsList } = useAgents(companyId);
   const { data: subIssues } = useSubIssues(issueId ?? '');
+  const { data: workProducts } = useWorkProducts(issueId ?? '');
   const updateMutation = useUpdateIssue();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
@@ -315,11 +316,98 @@ export function IssueDetail() {
         </Card>
       )}
 
+      {/* Work Products */}
+      <WorkProductsSection workProducts={workProducts} />
+
       {/* Completion Report + Reject/Retry */}
       {issue?.status === 'done' && (
         <CompletionReportSection issueId={issueId!} companyId={companyId} />
       )}
     </div>
+  );
+}
+
+// ── Work Products ──
+
+const statusVariant: Record<string, 'success' | 'destructive' | 'info' | 'secondary'> = {
+  merged: 'success',
+  closed: 'destructive',
+  open: 'info',
+  active: 'info',
+  draft: 'secondary',
+  ready_for_review: 'info',
+  approved: 'success',
+  changes_requested: 'destructive',
+  failed: 'destructive',
+  archived: 'secondary',
+};
+
+const reviewVariant: Record<string, 'success' | 'destructive' | 'secondary'> = {
+  approved: 'success',
+  changes_requested: 'destructive',
+  none: 'secondary',
+};
+
+function WorkProductsSection({ workProducts }: { workProducts?: WorkProduct[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Work Products</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!workProducts || workProducts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No work products yet</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Review</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {workProducts.map((wp) => (
+                <TableRow key={wp.id}>
+                  <TableCell className="font-medium">
+                    {wp.url ? (
+                      <a
+                        href={wp.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm hover:underline text-blue-600 dark:text-blue-400"
+                      >
+                        {wp.title}
+                      </a>
+                    ) : (
+                      <span className="text-sm">{wp.title}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs text-muted-foreground">{wp.type.replace('_', ' ')}</span>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant[wp.status] ?? 'secondary'}>
+                      {wp.status.replace('_', ' ')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {wp.reviewState !== 'none' ? (
+                      <Badge variant={reviewVariant[wp.reviewState] ?? 'secondary'}>
+                        {wp.reviewState.replace('_', ' ')}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
