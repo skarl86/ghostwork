@@ -320,7 +320,7 @@ export function IssueDetail() {
       <WorkProductsSection workProducts={workProducts} isLoading={isLoadingWorkProducts} />
 
       {/* Completion Report + Reject/Retry */}
-      {issue?.status === 'done' && (
+      {(issue?.status === 'done' || issue?.status === 'blocked') && (
         <CompletionReportSection issueId={issueId!} companyId={companyId} />
       )}
     </div>
