@@ -71,7 +71,7 @@ const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
 export const QA_ROLES = new Set(['qa', 'reviewer', '리뷰어']);
 
 /** Approval signal patterns in QA run summaries */
-const APPROVAL_PATTERNS = [/\bapproved?\b/i, /\bpass(ed)?\b/i, /\blooks?\s*good\b/i, /\blgtm\b/i];
+export const APPROVAL_PATTERNS = [/\bapproved?\b/i, /\bpass(ed)?\b/i, /\blooks?\s*good\b/i, /\blgtm\b/i];
 
 export interface ExecuteRunInput {
   run: {
@@ -408,8 +408,8 @@ export async function executeRun(
 /**
  * Determine terminal run status from adapter result.
  */
-function determineStatus(
-  result: AdapterExecutionResult,
+export function determineStatus(
+  result: Pick<AdapterExecutionResult, 'timedOut' | 'exitCode'>,
 ): 'succeeded' | 'failed' | 'timed_out' {
   if (result.timedOut) return 'timed_out';
   if (result.exitCode === 0) return 'succeeded';
