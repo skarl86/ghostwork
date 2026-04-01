@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Settings, Save, FolderOpen, Pencil } from 'lucide-react';
-import { fetchProjects, fetchProjectWorkspace, setProjectWorkspace, type Project, type ProjectWorkspace } from '@/lib/api';
+import { fetchProjects, fetchProjectWorkspace, setProjectWorkspace, type Project } from '@/lib/api';
 
 function ProjectWorkspaceRow({ project }: { project: Project }) {
   const queryClient = useQueryClient();

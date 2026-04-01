@@ -14,8 +14,6 @@ import {
   checkSubIssuesComplete,
   getPMReviewCycleCount,
   MAX_REVIEW_CYCLES,
-  generateCompletionReport,
-  storeCompletionReport,
 } from './pm-orchestrator.js';
 import { enqueueWakeup } from './queue.js';
 

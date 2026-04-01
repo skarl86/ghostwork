@@ -20,7 +20,7 @@ interface TranscriptEntry {
 function mapEventToEntry(e: RunEvent): TranscriptEntry {
   const payload = e.payload;
   let type: string = e.kind;
-  let content: string | null = null;
+  let content: string | null = null; // eslint-disable-line no-useless-assignment
 
   if (e.kind === 'log' && payload) {
     type = (payload.stream as string) === 'stderr' ? 'stderr' : 'stdout';

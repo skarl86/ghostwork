@@ -30,7 +30,6 @@ import {
 } from '@/components/ui/table';
 import { ChevronDown, ChevronRight, FolderKanban, Plus } from 'lucide-react';
 import type { Project, ProjectWorkspace } from '@/lib/api';
-import { cn } from '@/lib/utils';
 
 function statusVariant(status: string) {
   switch (status) {

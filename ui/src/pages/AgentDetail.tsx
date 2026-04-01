@@ -49,7 +49,6 @@ export function AgentDetail() {
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { data: adapterModels } = useAdapterModels(agent?.adapterType ?? '');
-  const parentAgent = agents?.find((a) => a.id === agent?.reportsTo);
   const subordinates = agents?.filter((a) => a.reportsTo === agentId);
 
   if (isLoading) return <div className="p-6 text-muted-foreground">Loading agent...</div>;

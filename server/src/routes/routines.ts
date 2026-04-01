@@ -5,7 +5,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { eq, desc } from 'drizzle-orm';
-import { routines, routineTriggers, routineRuns } from '@ghostwork/db';
+import { routines, routineTriggers, routineRuns as _routineRuns } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import { requireActor } from '../hooks/require-actor.js';
 

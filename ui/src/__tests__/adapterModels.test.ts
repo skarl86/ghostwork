@@ -79,7 +79,7 @@ describe('fetchAdapterModels', () => {
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    const { fetchAdapterModels, ApiError } = await import('../lib/api');
+    const { fetchAdapterModels } = await import('../lib/api');
 
     await expect(fetchAdapterModels('claude-local')).rejects.toBeInstanceOf(ApiError);
   });
@@ -93,7 +93,7 @@ describe('fetchAdapterModels', () => {
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    const { fetchAdapterModels, ApiError } = await import('../lib/api');
+    const { fetchAdapterModels } = await import('../lib/api');
 
     await expect(fetchAdapterModels('unknown')).rejects.toThrow('API Error: 404 Not Found');
   });

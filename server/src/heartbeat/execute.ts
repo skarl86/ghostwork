@@ -34,7 +34,6 @@ import {
   checkSubIssuesComplete,
   getSubIssueSummaries,
   handlePMReviewDecision,
-  generateCompletionReport,
   generateSimpleCompletionReport,
   storeCompletionReport,
 } from './pm-orchestrator.js';
@@ -475,7 +474,7 @@ async function getPreviousRunSummary(
 async function getQAFeedback(
   db: Db,
   issueId: string,
-  currentRunId: string,
+  _currentRunId: string,
 ): Promise<string | null> {
   // Find the most recent succeeded run by a QA agent for this issue
   const runs = await db

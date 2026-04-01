@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router';
-import { ArrowLeft, CheckCircle, XCircle, Clock, Eye } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,12 +28,6 @@ const QA_ROLES = new Set(['qa', 'reviewer', '리뷰어']);
 const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
 
 /** Human-readable status labels for the review flow */
-const STATUS_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  in_review: { label: 'Awaiting QA Review', icon: <Eye className="h-4 w-4" />, color: 'text-yellow-600' },
-  done: { label: 'Completed', icon: <CheckCircle className="h-4 w-4" />, color: 'text-green-600' },
-  todo: { label: 'To Do', icon: <Clock className="h-4 w-4" />, color: 'text-blue-600' },
-  in_progress: { label: 'In Progress', icon: <Clock className="h-4 w-4" />, color: 'text-blue-600' },
-};
 
 const STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'blocked', 'done', 'cancelled'] as const;
 
@@ -331,7 +325,7 @@ export function IssueDetail() {
 
 // ── Completion Report + Reject ──
 
-function CompletionReportSection({ issueId, companyId }: { issueId: string; companyId: string }) {
+function CompletionReportSection({ issueId }: { issueId: string; companyId?: string }) {
   const { data: report, isLoading } = useIssueReport(issueId);
   const rejectMutation = useRejectIssue();
   const [rejectOpen, setRejectOpen] = useState(false);
