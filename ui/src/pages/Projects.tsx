@@ -6,6 +6,7 @@ import {
   useProjectWorkspace,
   useSetProjectWorkspace,
   useUpdateProjectWorkspace,
+  useCloneWorkspace,
 } from '@/hooks/queries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,7 +29,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { CheckCircle, ChevronDown, ChevronRight, FolderCheck, FolderKanban, Plus, XCircle } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { CheckCircle, ChevronDown, ChevronRight, FolderCheck, FolderKanban, GitBranch, Plus, XCircle } from 'lucide-react';
 import type { Project, ProjectWorkspace } from '@/lib/api';
 import { validateWorkspacePath, validateRepoUrl } from '@/lib/api';
 
@@ -49,12 +51,16 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
   const { data: workspace, isLoading } = useProjectWorkspace(projectId);
   const setWorkspace = useSetProjectWorkspace();
   const updateWorkspace = useUpdateProjectWorkspace();
+  const cloneWorkspaceMutation = useCloneWorkspace();
   const [editing, setEditing] = useState(false);
+  const [mode, setMode] = useState<'local' | 'clone'>('local');
   const [form, setForm] = useState({ cwd: '', repoUrl: '', branch: '' });
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<{ valid: boolean; reason?: string } | null>(null);
   const [validatingRepo, setValidatingRepo] = useState(false);
   const [repoValidation, setRepoValidation] = useState<{ valid: boolean; reason?: string } | null>(null);
+  const [cloneForm, setCloneForm] = useState({ repoUrl: '', targetDir: '', branch: '' });
+  const [cloneError, setCloneError] = useState<string | null>(null);
 
   const startEdit = (ws?: ProjectWorkspace | null) => {
     setForm({
@@ -62,8 +68,11 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
       repoUrl: ws?.repoUrl ?? '',
       branch: ws?.branch ?? '',
     });
+    setCloneForm({ repoUrl: ws?.repoUrl ?? '', targetDir: '', branch: ws?.branch ?? '' });
     setValidation(null);
     setRepoValidation(null);
+    setCloneError(null);
+    setMode('local');
     setEditing(true);
   };
 
@@ -116,7 +125,30 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
     }
   };
 
+  const handleClone = () => {
+    if (!cloneForm.repoUrl.trim()) return;
+    setCloneError(null);
+    cloneWorkspaceMutation.mutate(
+      {
+        projectId,
+        data: {
+          repoUrl: cloneForm.repoUrl.trim(),
+          targetDir: cloneForm.targetDir.trim() || undefined,
+          branch: cloneForm.branch.trim() || undefined,
+        },
+      },
+      {
+        onSuccess: () => setEditing(false),
+        onError: (err: unknown) => {
+          const body = (err as { body?: { error?: string } }).body;
+          setCloneError(body?.error ?? (err as Error).message ?? 'Clone failed');
+        },
+      },
+    );
+  };
+
   const isSaving = setWorkspace.isPending || updateWorkspace.isPending;
+  const isDisabled = cloneWorkspaceMutation.isPending || isSaving;
 
   if (isLoading) {
     return <div className="text-sm text-muted-foreground py-2">Loading workspace...</div>;
@@ -125,91 +157,163 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
   if (editing) {
     return (
       <div className="space-y-3 py-2">
-        <div className="grid gap-2">
-          <Label htmlFor={`ws-cwd-${projectId}`}>Working Directory (cwd)</Label>
-          <div className="flex gap-2">
-            <Input
-              id={`ws-cwd-${projectId}`}
-              value={form.cwd}
-              onChange={(e) => {
-                setForm((f) => ({ ...f, cwd: e.target.value }));
-                setValidation(null);
-              }}
-              placeholder="/path/to/project"
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleValidate}
-              disabled={validating || !form.cwd.trim()}
-            >
-              <FolderCheck className="mr-1 h-4 w-4" />
-              {validating ? 'Checking...' : 'Verify'}
-            </Button>
-          </div>
-          {validation && (
-            <div className={`flex items-center gap-1.5 text-sm ${validation.valid ? 'text-green-600' : 'text-red-600'}`}>
-              {validation.valid ? (
-                <><CheckCircle className="h-4 w-4" /> Valid path</>
-              ) : (
-                <><XCircle className="h-4 w-4" /> {validation.reason}</>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as 'local' | 'clone')}>
+          <TabsList className="mb-3">
+            <TabsTrigger value="local" disabled={isDisabled}>
+              <FolderCheck className="mr-1.5 h-4 w-4" />
+              Local Directory
+            </TabsTrigger>
+            <TabsTrigger value="clone" disabled={isDisabled}>
+              <GitBranch className="mr-1.5 h-4 w-4" />
+              Clone from Remote
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="local" className="space-y-3 mt-0">
+            <div className="grid gap-2">
+              <Label htmlFor={`ws-cwd-${projectId}`}>Working Directory (cwd)</Label>
+              <div className="flex gap-2">
+                <Input
+                  id={`ws-cwd-${projectId}`}
+                  value={form.cwd}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, cwd: e.target.value }));
+                    setValidation(null);
+                  }}
+                  placeholder="/path/to/project"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleValidate}
+                  disabled={validating || !form.cwd.trim()}
+                >
+                  <FolderCheck className="mr-1 h-4 w-4" />
+                  {validating ? 'Checking...' : 'Verify'}
+                </Button>
+              </div>
+              {validation && (
+                <div className={`flex items-center gap-1.5 text-sm ${validation.valid ? 'text-green-600' : 'text-red-600'}`}>
+                  {validation.valid ? (
+                    <><CheckCircle className="h-4 w-4" /> Valid path</>
+                  ) : (
+                    <><XCircle className="h-4 w-4" /> {validation.reason}</>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor={`ws-repo-${projectId}`}>Repository URL</Label>
-          <div className="flex gap-2">
-            <Input
-              id={`ws-repo-${projectId}`}
-              value={form.repoUrl}
-              onChange={(e) => {
-                setForm((f) => ({ ...f, repoUrl: e.target.value }));
-                setRepoValidation(null);
-              }}
-              placeholder="https://github.com/org/repo"
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleValidateRepo}
-              disabled={validatingRepo || !form.repoUrl.trim()}
-            >
-              <FolderCheck className="mr-1 h-4 w-4" />
-              {validatingRepo ? 'Checking...' : 'Verify'}
-            </Button>
-          </div>
-          {repoValidation && (
-            <div className={`flex items-center gap-1.5 text-sm ${repoValidation.valid ? 'text-green-600' : 'text-red-600'}`}>
-              {repoValidation.valid ? (
-                <><CheckCircle className="h-4 w-4" /> Repository accessible</>
-              ) : (
-                <><XCircle className="h-4 w-4" /> {repoValidation.reason}</>
+            <div className="grid gap-2">
+              <Label htmlFor={`ws-repo-${projectId}`}>Repository URL</Label>
+              <div className="flex gap-2">
+                <Input
+                  id={`ws-repo-${projectId}`}
+                  value={form.repoUrl}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, repoUrl: e.target.value }));
+                    setRepoValidation(null);
+                  }}
+                  placeholder="https://github.com/org/repo"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleValidateRepo}
+                  disabled={validatingRepo || !form.repoUrl.trim()}
+                >
+                  <FolderCheck className="mr-1 h-4 w-4" />
+                  {validatingRepo ? 'Checking...' : 'Verify'}
+                </Button>
+              </div>
+              {repoValidation && (
+                <div className={`flex items-center gap-1.5 text-sm ${repoValidation.valid ? 'text-green-600' : 'text-red-600'}`}>
+                  {repoValidation.valid ? (
+                    <><CheckCircle className="h-4 w-4" /> Repository accessible</>
+                  ) : (
+                    <><XCircle className="h-4 w-4" /> {repoValidation.reason}</>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor={`ws-branch-${projectId}`}>Branch</Label>
-          <Input
-            id={`ws-branch-${projectId}`}
-            value={form.branch}
-            onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
-            placeholder="main"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={handleSave} disabled={isSaving || !form.cwd.trim()}>
-            {isSaving ? 'Saving...' : 'Save'}
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
-            Cancel
-          </Button>
-        </div>
+            <div className="grid gap-2">
+              <Label htmlFor={`ws-branch-${projectId}`}>Branch</Label>
+              <Input
+                id={`ws-branch-${projectId}`}
+                value={form.branch}
+                onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
+                placeholder="main"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSave} disabled={isSaving || !form.cwd.trim()}>
+                {isSaving ? 'Saving...' : 'Save'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="clone" className="space-y-3 mt-0">
+            <div className="grid gap-2">
+              <Label htmlFor={`clone-repo-${projectId}`}>Repository URL</Label>
+              <Input
+                id={`clone-repo-${projectId}`}
+                value={cloneForm.repoUrl}
+                onChange={(e) => setCloneForm((f) => ({ ...f, repoUrl: e.target.value }))}
+                placeholder="https://github.com/org/repo"
+                disabled={cloneWorkspaceMutation.isPending}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor={`clone-dir-${projectId}`}>Target Directory (optional)</Label>
+              <Input
+                id={`clone-dir-${projectId}`}
+                value={cloneForm.targetDir}
+                onChange={(e) => setCloneForm((f) => ({ ...f, targetDir: e.target.value }))}
+                placeholder="~/.ghostwork/{repo-name}"
+                disabled={cloneWorkspaceMutation.isPending}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor={`clone-branch-${projectId}`}>Branch (optional)</Label>
+              <Input
+                id={`clone-branch-${projectId}`}
+                value={cloneForm.branch}
+                onChange={(e) => setCloneForm((f) => ({ ...f, branch: e.target.value }))}
+                placeholder="main"
+                disabled={cloneWorkspaceMutation.isPending}
+              />
+            </div>
+            {cloneError && (
+              <div className="flex items-center gap-1.5 text-sm text-red-600">
+                <XCircle className="h-4 w-4" />
+                {cloneError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleClone}
+                disabled={cloneWorkspaceMutation.isPending || !cloneForm.repoUrl.trim()}
+              >
+                <GitBranch className="mr-1 h-4 w-4" />
+                {cloneWorkspaceMutation.isPending ? 'Cloning...' : 'Clone & Setup'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditing(false)}
+                disabled={cloneWorkspaceMutation.isPending}
+              >
+                Cancel
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     );
   }

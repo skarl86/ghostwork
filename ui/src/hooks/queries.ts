@@ -43,6 +43,7 @@ import {
   fetchProjectWorkspace,
   setProjectWorkspace,
   updateProjectWorkspace,
+  cloneWorkspace,
   fetchWorkProducts,
 } from '@/lib/api';
 
@@ -486,6 +487,22 @@ export function useUpdateProjectWorkspace() {
       if (result) {
         void qc.invalidateQueries({ queryKey: queryKeys.projectWorkspace(result.projectId) });
       }
+    },
+  });
+}
+
+export function useCloneWorkspace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      data,
+    }: {
+      projectId: string;
+      data: { repoUrl: string; targetDir?: string; branch?: string };
+    }) => cloneWorkspace(projectId, data),
+    onSuccess: (_result, variables) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.projectWorkspace(variables.projectId) });
     },
   });
 }
