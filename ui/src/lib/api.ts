@@ -94,7 +94,7 @@ export interface Agent {
   updatedAt: string;
 }
 
-export type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'plan_review' | 'blocked' | 'done' | 'cancelled';
+export type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'plan_review' | 'plan_rejected' | 'blocked' | 'done' | 'cancelled';
 
 export interface Issue {
   id: string;
@@ -565,4 +565,18 @@ export function validateWorkspacePath(cwd: string) {
 
 export function validateRepoUrl(repoUrl: string) {
   return api.post<{ valid: boolean; reason?: string }>('/projects/workspace/validate-repo', { repoUrl });
+}
+
+export interface CloneWorkspaceResponse {
+  cwd: string;
+  repoUrl: string;
+  branch: string;
+  cloned: boolean;
+}
+
+export function cloneWorkspace(
+  projectId: string,
+  data: { repoUrl: string; targetDir?: string; branch?: string },
+) {
+  return api.post<CloneWorkspaceResponse>(`/projects/${projectId}/workspace/clone`, data);
 }

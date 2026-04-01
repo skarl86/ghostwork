@@ -53,6 +53,7 @@ import {
 } from './pm-orchestrator.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cloneRepository } from '../services/git-clone.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Project root — skills/ lives here */
@@ -347,7 +348,41 @@ export async function executeRun(
     const projectId = issueRows2[0]?.projectId;
     if (projectId) {
       const ws = await db.select().from(projectWorkspaces).where(eq(projectWorkspaces.projectId, projectId)).limit(1);
-      if (ws[0]?.cwd) workspaceCwd = ws[0].cwd;
+      if (ws[0]?.cwd) {
+        workspaceCwd = ws[0].cwd;
+      } else if (ws[0]?.repoUrl) {
+        // No cwd yet — auto-clone (or pull) the repository
+        const repoUrl = ws[0].repoUrl;
+        const wsId = ws[0].id;
+
+        void logRunEvent(db, run.id, run.companyId, 'log', {
+          stream: 'stdout',
+          chunk: `[ghostwork] Cloning workspace from ${repoUrl} …\n`,
+        });
+
+        try {
+          const cloneResult = await cloneRepository(repoUrl);
+
+          // Persist cwd so subsequent runs skip the clone
+          await db
+            .update(projectWorkspaces)
+            .set({ cwd: cloneResult.cwd })
+            .where(eq(projectWorkspaces.id, wsId));
+
+          workspaceCwd = cloneResult.cwd;
+
+          void logRunEvent(db, run.id, run.companyId, 'log', {
+            stream: 'stdout',
+            chunk: `[ghostwork] Workspace ready at ${cloneResult.cwd} (branch: ${cloneResult.branch})\n`,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return completeRun(db, run.id, 'failed', {
+            exitCode: 1,
+            summary: `Workspace clone failed: ${msg}`,
+          });
+        }
+      }
     }
   }
 
@@ -959,10 +994,10 @@ async function handleSuccessfulIssueCompletion(
 
       console.log(`[executeRun] Issue ${issueData.id} plan approved by ${agent.name}`);
     } else {
-      // plan_review → backlog (PM can revisit)
+      // plan_review → plan_rejected (PM must revise before re-review)
       await db
         .update(issues)
-        .set({ status: 'backlog', updatedAt: new Date() })
+        .set({ status: 'plan_rejected', updatedAt: new Date() })
         .where(eq(issues.id, issueData.id));
 
       await activity.log({
@@ -980,7 +1015,7 @@ async function handleSuccessfulIssueCompletion(
         type: 'issue.status',
         payload: {
           issueId: issueData.id,
-          status: 'backlog',
+          status: 'plan_rejected',
           reason: `Plan rejected by ${agent.name}: ${summary}`,
         },
       });
@@ -988,8 +1023,12 @@ async function handleSuccessfulIssueCompletion(
       console.log(`[executeRun] Issue ${issueData.id} plan rejected by ${agent.name}`);
     }
   } else if (role === 'pm') {
-    // PM agent — parse response as plan or review
-    await handlePMCompletion(db, issueData, agent, summary, run, eventBus);
+    // PM agent — handle plan_rejected revision or normal plan/review
+    if (issueData.status === 'plan_rejected') {
+      await handlePlanRejectedRevision(db, issueData, agent, summary, run, eventBus);
+    } else {
+      await handlePMCompletion(db, issueData, agent, summary, run, eventBus);
+    }
   } else {
     // Other roles — complete as done (backward compatible)
     await db
@@ -1063,6 +1102,57 @@ async function buildPMPrompt(
   ];
 
   return parts.join('\n');
+}
+
+/**
+ * Handle PM revision of a plan_rejected issue.
+ * PM revises the plan description based on reviewer feedback, then transitions back to plan_review.
+ */
+async function handlePlanRejectedRevision(
+  db: Db,
+  issueData: { id: string; title: string; description: string | null; status: string },
+  agent: { id: string; companyId: string; name: string; adapterType: string },
+  summary: string,
+  run: { id: string; companyId: string },
+  eventBus?: LiveEventBus,
+): Promise<void> {
+  const activity = activityService(db);
+
+  // Update the issue description with the PM's revised plan and transition back to plan_review
+  await db
+    .update(issues)
+    .set({
+      description: summary || issueData.description,
+      status: 'plan_review',
+      updatedAt: new Date(),
+    })
+    .where(eq(issues.id, issueData.id));
+
+  await activity.log({
+    companyId: run.companyId,
+    actorType: 'agent',
+    actorId: agent.id,
+    action: 'pm.revised_plan',
+    entityType: 'issue',
+    entityId: issueData.id,
+    metadata: {
+      agentName: agent.name,
+      issueTitle: issueData.title,
+      summary: summary?.slice(0, 500),
+    },
+  });
+
+  eventBus?.publish({
+    companyId: run.companyId,
+    type: 'issue.status',
+    payload: {
+      issueId: issueData.id,
+      status: 'plan_review',
+      reason: `Plan revised by ${agent.name}, re-submitting for review`,
+    },
+  });
+
+  console.log(`[executeRun] PM revised plan for rejected issue ${issueData.id}, transitioning back to plan_review`);
 }
 
 /**

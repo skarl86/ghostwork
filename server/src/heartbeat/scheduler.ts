@@ -111,6 +111,26 @@ export function createScheduler(
           );
       }
 
+      // PM agents: pick up plan_rejected issues from their company (to revise rejected plans)
+      let planRejectedIssues: { id: string; title: string; description: string | null; goalId: string | null }[] = [];
+      if (agent.role === 'pm') {
+        planRejectedIssues = await db
+          .select({
+            id: issues.id,
+            title: issues.title,
+            description: issues.description,
+            goalId: issues.goalId,
+          })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.companyId, agent.companyId),
+              eq(issues.status, 'plan_rejected'),
+              isNull(issues.executionRunId),
+            ),
+          );
+      }
+
       // Plan-reviewer agents: pick up unassigned plan_review issues from their company
       let planReviewIssues: { id: string; title: string; description: string | null; goalId: string | null }[] = [];
       if (PLAN_REVIEW_ROLES.has(agent.role)) {
@@ -131,7 +151,7 @@ export function createScheduler(
           );
       }
 
-      const allIssues = [...assignedIssues, ...qaIssues, ...planReviewIssues];
+      const allIssues = [...assignedIssues, ...qaIssues, ...planReviewIssues, ...planRejectedIssues];
       // Deduplicate by id
       const seen = new Set<string>();
       const uniqueIssues = allIssues.filter((i) => {

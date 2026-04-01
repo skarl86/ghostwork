@@ -29,7 +29,7 @@ const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
 
 /** Human-readable status labels for the review flow */
 
-const STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'plan_review', 'blocked', 'done', 'cancelled'] as const;
+const STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'plan_review', 'plan_rejected', 'blocked', 'done', 'cancelled'] as const;
 
 const priorityVariant: Record<string, 'default' | 'destructive' | 'warning' | 'info' | 'secondary'> = {
   urgent: 'destructive',
