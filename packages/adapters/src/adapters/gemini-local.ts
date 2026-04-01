@@ -39,6 +39,7 @@ export const geminiLocalAdapter: ServerAdapterModule = {
   models: [
     { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'google' },
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'google' },
+    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite', provider: 'google' },
     { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google' },
   ],
 
