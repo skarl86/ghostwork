@@ -10,7 +10,7 @@ import { workProductService } from '../services/work-products.js';
 import { checkoutIssue, releaseAndPromote } from '../heartbeat/checkout.js';
 import { requireActor } from '../hooks/require-actor.js';
 
-const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'closed', 'cancelled'] as const;
+const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'plan_review', 'done', 'closed', 'cancelled'] as const;
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
 const createBody = z.object({

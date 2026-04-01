@@ -71,6 +71,8 @@ function getSkillDirsForRole(role: string): string[] {
       return [base, resolve(PROJECT_ROOT, 'skills', 'qa')];
     case 'pm':
       return [base, resolve(PROJECT_ROOT, 'skills', 'pm')];
+    case 'plan-reviewer':
+      return [base, resolve(PROJECT_ROOT, 'skills', 'plan-reviewer')];
     case 'designer':
       return [base, resolve(PROJECT_ROOT, 'skills', 'designer')];
     default:
@@ -83,6 +85,9 @@ const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
 
 /** Roles considered QA/reviewer (auto-pick in_review issues) */
 export const QA_ROLES = new Set(['qa', 'reviewer', '리뷰어']);
+
+/** Roles considered plan-reviewer (auto-pick plan_review issues) */
+export const PLAN_REVIEW_ROLES = new Set(['plan-reviewer']);
 
 /** Explicit rejection patterns — checked BEFORE approval to avoid false positives */
 export const REJECTION_PATTERNS = [/\brejected?\b/i, /\bfail(ed|ure|s)?\b/i, /\bnot\s+approved?\b/i];
@@ -264,8 +269,8 @@ export async function executeRun(
       });
     }
 
-    // Transition issue to in_progress if it's todo or backlog
-    if (issue.status === 'todo' || issue.status === 'backlog') {
+    // Transition issue to in_progress if it's todo, backlog, or plan_review
+    if (issue.status === 'todo' || issue.status === 'backlog' || issue.status === 'plan_review') {
       await db
         .update(issues)
         .set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() })
@@ -309,7 +314,10 @@ export async function executeRun(
     const agentRole = await getAgentRole(db, agent.id);
     let prompt: string;
 
-    if (QA_ROLES.has(agentRole)) {
+    if (PLAN_REVIEW_ROLES.has(agentRole)) {
+      // Plan reviewer — build plan review prompt
+      prompt = buildPlanReviewPrompt(issueData);
+    } else if (QA_ROLES.has(agentRole)) {
       // QA agent — build review prompt with previous dev work
       const prevSummary = await getPreviousRunSummary(db, issueData.id, run.id);
       prompt = buildQAPrompt(issueData, prevSummary);
@@ -742,6 +750,26 @@ export function buildDeveloperPrompt(
 }
 
 /**
+ * Build plan review prompt for plan-reviewer agents.
+ */
+export function buildPlanReviewPrompt(
+  issue: { title: string; description: string | null },
+): string {
+  return [
+    '# Plan Review Request',
+    '',
+    `## Sub-Issue Title: ${issue.title}`,
+    '',
+    '## Sub-Issue Description:',
+    issue.description || '(No description)',
+    '',
+    'Review this sub-issue for executability.',
+    'Check: references exist, task is clear, acceptance criteria are verifiable.',
+    'Respond with APPROVED or REJECTED: <reason>',
+  ].join('\n');
+}
+
+/**
  * Handle successful issue completion with role-based Dev↔QA flow.
  *
  * - Developer roles: send to `in_review` (if QA agent exists), else `done`
@@ -896,6 +924,68 @@ async function handleSuccessfulIssueCompletion(
       });
 
       console.log(`[executeRun] Issue ${issueData.id} rejected by QA agent ${agent.name}`);
+    }
+  } else if (PLAN_REVIEW_ROLES.has(role)) {
+    // Plan reviewer — parse approval/rejection, then transition issue status
+    const isRejected = REJECTION_PATTERNS.some((pattern) => pattern.test(summary));
+    const isApproved = !isRejected && APPROVAL_PATTERNS.some((pattern) => pattern.test(summary));
+
+    if (isApproved) {
+      // plan_review → todo (developer can now pick it up)
+      await db
+        .update(issues)
+        .set({ status: 'todo', updatedAt: new Date() })
+        .where(eq(issues.id, issueData.id));
+
+      await activity.log({
+        companyId: run.companyId,
+        actorType: 'agent',
+        actorId: agent.id,
+        action: 'plan_review.approved',
+        entityType: 'issue',
+        entityId: issueData.id,
+        metadata: { agentName: agent.name, issueTitle: issueData.title, summary },
+      });
+
+      eventBus?.publish({
+        companyId: run.companyId,
+        type: 'issue.status',
+        payload: {
+          issueId: issueData.id,
+          status: 'todo',
+          reason: `Plan approved by ${agent.name}`,
+        },
+      });
+
+      console.log(`[executeRun] Issue ${issueData.id} plan approved by ${agent.name}`);
+    } else {
+      // plan_review → backlog (PM can revisit)
+      await db
+        .update(issues)
+        .set({ status: 'backlog', updatedAt: new Date() })
+        .where(eq(issues.id, issueData.id));
+
+      await activity.log({
+        companyId: run.companyId,
+        actorType: 'agent',
+        actorId: agent.id,
+        action: 'plan_review.rejected',
+        entityType: 'issue',
+        entityId: issueData.id,
+        metadata: { agentName: agent.name, issueTitle: issueData.title, summary },
+      });
+
+      eventBus?.publish({
+        companyId: run.companyId,
+        type: 'issue.status',
+        payload: {
+          issueId: issueData.id,
+          status: 'backlog',
+          reason: `Plan rejected by ${agent.name}: ${summary}`,
+        },
+      });
+
+      console.log(`[executeRun] Issue ${issueData.id} plan rejected by ${agent.name}`);
     }
   } else if (role === 'pm') {
     // PM agent — parse response as plan or review
