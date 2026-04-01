@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/table';
 import { CheckCircle, ChevronDown, ChevronRight, FolderCheck, FolderKanban, Plus, XCircle } from 'lucide-react';
 import type { Project, ProjectWorkspace } from '@/lib/api';
-import { validateWorkspacePath } from '@/lib/api';
+import { validateWorkspacePath, validateRepoUrl } from '@/lib/api';
 
 function statusVariant(status: string) {
   switch (status) {
@@ -53,6 +53,8 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
   const [form, setForm] = useState({ cwd: '', repoUrl: '', branch: '' });
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<{ valid: boolean; reason?: string } | null>(null);
+  const [validatingRepo, setValidatingRepo] = useState(false);
+  const [repoValidation, setRepoValidation] = useState<{ valid: boolean; reason?: string } | null>(null);
 
   const startEdit = (ws?: ProjectWorkspace | null) => {
     setForm({
@@ -61,6 +63,7 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
       branch: ws?.branch ?? '',
     });
     setValidation(null);
+    setRepoValidation(null);
     setEditing(true);
   };
 
@@ -75,6 +78,20 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
       setValidation({ valid: false, reason: 'Failed to validate path' });
     } finally {
       setValidating(false);
+    }
+  };
+
+  const handleValidateRepo = async () => {
+    if (!form.repoUrl.trim()) return;
+    setValidatingRepo(true);
+    setRepoValidation(null);
+    try {
+      const result = await validateRepoUrl(form.repoUrl.trim());
+      setRepoValidation(result);
+    } catch {
+      setRepoValidation({ valid: false, reason: 'Failed to validate repository' });
+    } finally {
+      setValidatingRepo(false);
     }
   };
 
@@ -144,12 +161,37 @@ function WorkspaceDetail({ projectId }: { projectId: string }) {
         </div>
         <div className="grid gap-2">
           <Label htmlFor={`ws-repo-${projectId}`}>Repository URL</Label>
-          <Input
-            id={`ws-repo-${projectId}`}
-            value={form.repoUrl}
-            onChange={(e) => setForm((f) => ({ ...f, repoUrl: e.target.value }))}
-            placeholder="https://github.com/org/repo"
-          />
+          <div className="flex gap-2">
+            <Input
+              id={`ws-repo-${projectId}`}
+              value={form.repoUrl}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, repoUrl: e.target.value }));
+                setRepoValidation(null);
+              }}
+              placeholder="https://github.com/org/repo"
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleValidateRepo}
+              disabled={validatingRepo || !form.repoUrl.trim()}
+            >
+              <FolderCheck className="mr-1 h-4 w-4" />
+              {validatingRepo ? 'Checking...' : 'Verify'}
+            </Button>
+          </div>
+          {repoValidation && (
+            <div className={`flex items-center gap-1.5 text-sm ${repoValidation.valid ? 'text-green-600' : 'text-red-600'}`}>
+              {repoValidation.valid ? (
+                <><CheckCircle className="h-4 w-4" /> Repository accessible</>
+              ) : (
+                <><XCircle className="h-4 w-4" /> {repoValidation.reason}</>
+              )}
+            </div>
+          )}
         </div>
         <div className="grid gap-2">
           <Label htmlFor={`ws-branch-${projectId}`}>Branch</Label>
