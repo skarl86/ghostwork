@@ -94,7 +94,7 @@ export interface Agent {
   updatedAt: string;
 }
 
-export type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'cancelled';
+export type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'plan_review' | 'blocked' | 'done' | 'cancelled';
 
 export interface Issue {
   id: string;

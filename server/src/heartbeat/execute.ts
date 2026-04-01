@@ -1047,14 +1047,47 @@ async function buildPMPrompt(
     return parts.join('\n');
   }
 
-  // Initial analysis phase
+  // Initial analysis phase — detailed prompt for high-quality sub-issue creation
   const parts = [
     `Task: ${issue.title}`,
     '',
     `Description: ${issue.description || 'No description'}`,
     '',
-    'Analyze this task and create a structured plan with sub-tasks.',
-    'Output your plan as a JSON block with analysis, subtasks, and notes.',
+    '## Instructions',
+    '',
+    'You are a PM agent. Analyze this task and create a detailed execution plan.',
+    '',
+    '### Step 1: Codebase Research (MANDATORY)',
+    'Before creating sub-tasks, research the codebase:',
+    '- Find the files that will need to be modified',
+    '- Identify existing patterns to follow',
+    '- Check what tests exist for related code',
+    '',
+    '### Step 2: Create Sub-Tasks',
+    'Output your plan as a JSON block. Each subtask description MUST be detailed (minimum 200 characters).',
+    '',
+    'REQUIRED JSON structure:',
+    '```json',
+    '{',
+    '  "analysis": "Your analysis of the task and codebase research findings",',
+    '  "subtasks": [',
+    '    {',
+    '      "title": "Concise task title",',
+    '      "description": "DETAILED description with ALL of the following sections:\\n\\n## 1. TASK\\n[Exact what to implement]\\n\\n## 2. EXPECTED OUTCOME\\n- Files to modify: [exact paths]\\n- Functionality: [exact behavior]\\n\\n## 3. IMPLEMENTATION APPROACH\\n- Follow pattern in [file:lines]\\n- [Step-by-step guidance]\\n\\n## 4. MUST DO\\n- [Required items]\\n\\n## 5. MUST NOT DO\\n- [Forbidden items]\\n\\n## 6. REFERENCES\\n- [file:lines] — [why relevant]",',
+    '      "role": "engineer",',
+    '      "priority": "medium"',
+    '    }',
+    '  ],',
+    '  "notes": "Additional context or decisions made"',
+    '}',
+    '```',
+    '',
+    '### CRITICAL RULES for sub-task descriptions:',
+    '- Each description MUST contain all 6 sections (TASK, EXPECTED OUTCOME, IMPLEMENTATION APPROACH, MUST DO, MUST NOT DO, REFERENCES)',
+    '- Each description MUST be at least 200 characters',
+    '- REFERENCES must include actual file paths from your codebase research',
+    '- MUST NOT DO must include "Do NOT modify files outside scope" and "Do NOT skip verification (pnpm build && pnpm lint && pnpm test:unit)"',
+    '- A vague one-line description is UNACCEPTABLE and will be rejected by the plan reviewer',
   ];
 
   return parts.join('\n');

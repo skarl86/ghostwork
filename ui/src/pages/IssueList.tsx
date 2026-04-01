@@ -43,6 +43,7 @@ import { Link, useSearchParams } from 'react-router';
 const COLUMNS = [
   { id: 'backlog', label: 'Backlog' },
   { id: 'todo', label: 'Todo' },
+  { id: 'plan_review', label: 'Plan Review' },
   { id: 'in_progress', label: 'In Progress' },
   { id: 'in_review', label: 'In Review' },
   { id: 'blocked', label: 'Blocked' },
@@ -57,6 +58,13 @@ const priorityVariant: Record<string, 'default' | 'destructive' | 'warning' | 'i
   low: 'secondary',
 };
 
+const statusVariant: Record<string, 'default' | 'secondary' | 'success' | 'warning' | 'info' | 'purple'> = {
+  plan_review: 'purple',
+  in_progress: 'info',
+  in_review: 'warning',
+  done: 'success',
+};
+
 function IssueCard({ issue, isDragging, subTaskCount }: { issue: Issue; isDragging?: boolean; subTaskCount?: number }) {
   const { companyId } = useCompanyContext();
   return (
@@ -69,6 +77,11 @@ function IssueCard({ issue, isDragging, subTaskCount }: { issue: Issue; isDraggi
         <Badge variant={priorityVariant[issue.priority] ?? 'secondary'} className="text-xs">
           {issue.priority}
         </Badge>
+        {statusVariant[issue.status] && (
+          <Badge variant={statusVariant[issue.status]} className="text-xs">
+            {issue.status.replace('_', ' ')}
+          </Badge>
+        )}
         {issue.assigneeAgentId && (
           <span className="text-xs text-muted-foreground truncate">
             Agent: {issue.assigneeAgentId.slice(0, 8)}
