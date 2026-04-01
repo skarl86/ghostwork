@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { determineStatus, APPROVAL_PATTERNS } from '../../heartbeat/execute.js';
+import { determineStatus, APPROVAL_PATTERNS, ACTIVE_RUN_STATUSES } from '../../heartbeat/execute.js';
 
 // ── determineStatus ──
 
@@ -221,121 +221,28 @@ describe('Issue status transition flow', () => {
   });
 });
 
-// ── Agent status lifecycle ──
+// ── ACTIVE_RUN_STATUSES constant ──
 
-describe('Agent status lifecycle', () => {
-  type AgentStatus = 'idle' | 'running' | 'error';
-
-  describe('run start → agent running', () => {
-    it('agent transitions to running when a run begins', () => {
-      const agentStatus: AgentStatus = 'idle';
-      // executeRun sets agent status to running before adapter.execute()
-      const nextStatus: AgentStatus = 'running';
-      expect(nextStatus).not.toBe(agentStatus);
-      expect(nextStatus).toBe('running');
-    });
+describe('ACTIVE_RUN_STATUSES', () => {
+  it('includes queued', () => {
+    expect(ACTIVE_RUN_STATUSES).toContain('queued');
   });
 
-  describe('run end → agent idle (conditional)', () => {
-    it('agent transitions to idle when no other active runs remain', () => {
-      const otherActiveRuns: string[] = []; // no other queued/running runs
-      const nextStatus: AgentStatus = otherActiveRuns.length === 0 ? 'idle' : 'running';
-      expect(nextStatus).toBe('idle');
-    });
-
-    it('agent stays running when other active runs exist', () => {
-      const otherActiveRuns = ['run-abc']; // another queued/running run
-      const nextStatus: AgentStatus = otherActiveRuns.length === 0 ? 'idle' : 'running';
-      expect(nextStatus).toBe('running');
-    });
+  it('includes running', () => {
+    expect(ACTIVE_RUN_STATUSES).toContain('running');
   });
 
-  describe('agent.status events published', () => {
-    it('publishes agent.status running at run start', () => {
-      const events: Array<{ type: string; status: AgentStatus }> = [];
-      // Simulates the eventBus?.publish call in executeRun step 3
-      events.push({ type: 'agent.status', status: 'running' });
-      expect(events).toHaveLength(1);
-      expect(events[0]).toEqual({ type: 'agent.status', status: 'running' });
-    });
-
-    it('publishes agent.status idle at run end when no other active runs', () => {
-      const events: Array<{ type: string; status: AgentStatus }> = [];
-      const otherActiveRuns: string[] = [];
-      // Simulates the finally block in executeRun
-      if (otherActiveRuns.length === 0) {
-        events.push({ type: 'agent.status', status: 'idle' });
-      }
-      expect(events).toHaveLength(1);
-      expect(events[0]).toEqual({ type: 'agent.status', status: 'idle' });
-    });
-
-    it('does not publish agent.status idle when other runs still active', () => {
-      const events: Array<{ type: string; status: AgentStatus }> = [];
-      const otherActiveRuns = ['run-xyz'];
-      if (otherActiveRuns.length === 0) {
-        events.push({ type: 'agent.status', status: 'idle' });
-      }
-      expect(events).toHaveLength(0);
-    });
+  it('includes deferred_issue_execution', () => {
+    // deferred_issue_execution is non-terminal — it transitions back to queued
+    // when the issue lock releases. Without it, the agent would be incorrectly
+    // set to idle while a deferred run is still pending.
+    expect(ACTIVE_RUN_STATUSES).toContain('deferred_issue_execution');
   });
 
-  describe('agent status on failure paths', () => {
-    it('agent returns to idle after a failed run (no other runs)', () => {
-      const runStatus = determineStatus({ exitCode: 1 });
-      const otherActiveRuns: string[] = [];
-      // finally block runs regardless of success/failure
-      const agentStatus: AgentStatus = otherActiveRuns.length === 0 ? 'idle' : 'running';
-      expect(runStatus).toBe('failed');
-      expect(agentStatus).toBe('idle');
-    });
-
-    it('agent returns to idle after a timed-out run (no other runs)', () => {
-      const runStatus = determineStatus({ timedOut: true, exitCode: 0 });
-      const otherActiveRuns: string[] = [];
-      const agentStatus: AgentStatus = otherActiveRuns.length === 0 ? 'idle' : 'running';
-      expect(runStatus).toBe('timed_out');
-      expect(agentStatus).toBe('idle');
-    });
-
-    it('agent returns to idle after adapter throws (no other runs)', () => {
-      // When adapter.execute() throws, the catch block completes the run as failed
-      // and the finally block still checks for other active runs
-      const otherActiveRuns: string[] = [];
-      const agentStatus: AgentStatus = otherActiveRuns.length === 0 ? 'idle' : 'running';
-      expect(agentStatus).toBe('idle');
-    });
-  });
-
-  describe('running process tracking', () => {
-    it('run is added to runningProcesses before execution', () => {
-      const runningProcesses = new Map<string, { runId: string }>();
-      const runId = 'run-1';
-      runningProcesses.set(runId, { runId });
-      expect(runningProcesses.has(runId)).toBe(true);
-    });
-
-    it('run is removed from runningProcesses in finally block', () => {
-      const runningProcesses = new Map<string, { runId: string }>();
-      const runId = 'run-1';
-      runningProcesses.set(runId, { runId });
-      // finally block
-      runningProcesses.delete(runId);
-      expect(runningProcesses.has(runId)).toBe(false);
-    });
-
-    it('run is removed even on failure', () => {
-      const runningProcesses = new Map<string, { runId: string }>();
-      const runId = 'run-1';
-      runningProcesses.set(runId, { runId });
-      try {
-        throw new Error('adapter error');
-      } catch {
-        // adapter error caught
-      } finally {
-        runningProcesses.delete(runId);
-      }
-      expect(runningProcesses.has(runId)).toBe(false);
-    });
+  it('does not include terminal statuses', () => {
+    const terminalStatuses = ['succeeded', 'failed', 'timed_out', 'cancelled'];
+    for (const status of terminalStatuses) {
+      expect(ACTIVE_RUN_STATUSES).not.toContain(status);
+    }
   });
 });

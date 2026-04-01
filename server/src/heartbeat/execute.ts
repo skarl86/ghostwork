@@ -2,14 +2,18 @@
  * Heartbeat Execute Flow — ties adapters to the heartbeat engine.
  *
  * executeRun():
- * 1. Build AdapterExecutionContext from run + agent
- * 2. Get adapter from registry
- * 3. Publish run.status → running
- * 4. Call adapter.execute()
- * 5. Log events via onLog → logRunEvent + publish live log
- * 6. On completion: call completeRun + publish run.status
- * 7. Update agent_runtime_state (session)
- * 8. Remove from runningProcesses
+ *  1. Look up adapter from registry
+ *  2. Issue checkout: fetch and lock issue (if issue run)
+ *  3. Mark agent as running + publish agent.status → running
+ *  4. Build AdapterExecutionContext (context, skills, workspace cwd)
+ *  5. Track in runningProcesses + call adapter.execute()
+ *  6. Determine terminal status from adapter result
+ *  7. Complete run via completeRun()
+ *  8. Update issue status (Dev↔QA flow, PM orchestration)
+ *  9. Publish run.status → terminal
+ * 10. Update agent_runtime_state with session info
+ * 11. Reset agent status to idle (if no other active runs)
+ * 12. Remove from runningProcesses (finally)
  */
 
 import { eq, and, ne, desc, inArray } from 'drizzle-orm';
@@ -21,6 +25,15 @@ import type {
   AdapterRegistry,
 } from '@ghostwork/adapters';
 import { completeRun, type CompleteRunInput } from './completion.js';
+
+/**
+ * Run statuses considered "active" — used when checking whether an agent
+ * still has pending work before transitioning it back to idle.
+ *
+ * Includes `deferred_issue_execution` because that status is non-terminal:
+ * the run will transition back to `queued` once the issue lock releases.
+ */
+export const ACTIVE_RUN_STATUSES = ['queued', 'running', 'deferred_issue_execution'] as const;
 import { checkoutIssue, releaseIssue } from './checkout.js';
 import { logRunEvent } from './events.js';
 import type { ProcessHandle } from './types.js';
@@ -388,7 +401,7 @@ export async function executeRun(
         and(
           eq(heartbeatRuns.agentId, agent.id),
           ne(heartbeatRuns.id, run.id),
-          inArray(heartbeatRuns.status, ['queued', 'running']),
+          inArray(heartbeatRuns.status, [...ACTIVE_RUN_STATUSES]),
         ),
       )
       .limit(1);
