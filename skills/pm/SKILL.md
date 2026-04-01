@@ -110,24 +110,26 @@ Before creating sub-issues, verify your plan:
 
 ## Sub-Issue Ordering and Dependencies
 
-### Dependency Declaration
-In each sub-issue, clearly state:
-- **Blocks**: [Which sub-issues depend on this one completing]
-- **Blocked By**: [Which sub-issues must complete before this one] or "None — can start immediately"
+### Sequential Execution (System-Managed)
 
-### Parallelization
-Group independent sub-issues so the scheduler can run them in parallel:
+서브태스크 순서는 배열 순서로 결정됩니다 (sortOrder 자동 설정).
+시스템이 순서를 강제하므로 Dependency Declaration은 불필요합니다.
+
+**중요 규칙:**
+- 각 서브태스크는 **독립적으로 커밋 가능한 단위**여야 합니다
+- 서브태스크 A의 코드가 서브태스크 B에 의존하면, **A가 먼저** 와야 합니다
+- 같은 파일을 수정하는 서브태스크는 **가급적 하나로 합치세요**
+- 시스템이 각 서브태스크 완료 시 자동으로 `git commit`하고, 모든 서브태스크 완료 시 자동으로 PR을 생성합니다
+
+### Ordering Strategy
+서브태스크 배열의 순서가 곧 실행 순서입니다:
 ```
-Wave 1 (Foundation — start immediately):
-  - Sub-issue 1: Schema/types [quick]
-  - Sub-issue 2: Service layer [quick]
-
-Wave 2 (Core — after Wave 1):
-  - Sub-issue 3: API routes (depends: 1, 2)
-  - Sub-issue 4: Engine integration (depends: 2)
-
-Wave 3 (UI — after Wave 2):
-  - Sub-issue 5: Frontend component (depends: 3)
+subtasks: [
+  { title: "Schema/types 추가", ... },         // sortOrder: 0 — 먼저 실행
+  { title: "Service layer 구현", ... },         // sortOrder: 1 — 0 완료 후 실행
+  { title: "API routes 추가", ... },            // sortOrder: 2 — 1 완료 후 실행
+  { title: "Frontend component 구현", ... },    // sortOrder: 3 — 2 완료 후 실행
+]
 ```
 
 ---

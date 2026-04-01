@@ -47,13 +47,14 @@ pnpm test:unit
 - NEVER skip verification. NEVER commit with known failures.
 - NEVER use `--no-verify`, `// @ts-ignore`, or `eslint-disable` to bypass checks
 
-## Git Workflow
+## Git Workflow (System-Managed)
 
-1. Create a feature branch: `git checkout -b feat/short-description`
-2. Make changes and verify (see above)
-3. Commit with a conventional commit message: `feat:`, `fix:`, `refactor:`, etc.
-4. Push and create PR: `git push -u origin <branch> && gh pr create --base main`
-5. Include verification results in your PR description
+**브랜치 생성, 커밋, PR 생성은 시스템이 자동 처리합니다.**
+
+- 코드 작성 + 빌드/린트/테스트 통과만 책임지세요.
+- `git commit`, `git push`, `gh pr create`를 직접 실행하지 마세요.
+- 시스템이 QA 승인 후 자동으로 커밋하고, 모든 서브태스크 완료 시 PR을 생성합니다.
+- 기존 브랜치에서 작업 중일 수 있으니 `git checkout`이나 `git branch`도 하지 마세요.
 
 ## Output Format
 
