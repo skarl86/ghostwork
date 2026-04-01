@@ -6,6 +6,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { Db } from '@ghostwork/db';
 import { issueService } from '../services/issues.js';
+import { workProductService } from '../services/work-products.js';
 import { checkoutIssue, releaseAndPromote } from '../heartbeat/checkout.js';
 import { requireActor } from '../hooks/require-actor.js';
 
@@ -50,9 +51,44 @@ const checkoutBody = z.object({
   runId: z.string().uuid(),
 });
 
+const WORK_PRODUCT_TYPES = [
+  'pull_request', 'branch', 'preview', 'deployment', 'commit', 'artifact', 'document',
+] as const;
+
+const WORK_PRODUCT_STATUSES = [
+  'active', 'ready_for_review', 'approved', 'changes_requested',
+  'merged', 'closed', 'failed', 'archived', 'draft', 'open',
+] as const;
+
+const WORK_PRODUCT_REVIEW_STATES = [
+  'none', 'approved', 'changes_requested',
+] as const;
+
+const createWorkProductBody = z.object({
+  projectId: z.string().uuid().nullish(),
+  executionWorkspaceId: z.string().uuid().nullish(),
+  type: z.enum(WORK_PRODUCT_TYPES),
+  provider: z.string().min(1),
+  externalId: z.string().nullish(),
+  title: z.string().min(1),
+  url: z.string().nullish(),
+  status: z.enum(WORK_PRODUCT_STATUSES).default('active'),
+  reviewState: z.enum(WORK_PRODUCT_REVIEW_STATES).default('none'),
+  isPrimary: z.boolean().default(false),
+  healthStatus: z.enum(['unknown', 'healthy', 'unhealthy']).default('unknown'),
+  summary: z.string().nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  createdByRunId: z.string().uuid().nullish(),
+});
+
+const updateWorkProductBody = createWorkProductBody.partial();
+
+const workProductIdParams = z.object({ workProductId: z.string().uuid() });
+
 export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => {
   const { db } = opts;
   const svc = issueService(db);
+  const wpSvc = workProductService(db);
 
   app.get('/issues', { schema: { querystring: listQuery }, preHandler: [requireActor] }, async (request) => {
     const query = listQuery.parse(request.query);
@@ -189,5 +225,40 @@ export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => 
       subtasks: subtaskReports,
       totalRuns,
     });
+  });
+
+  // ── Work Products ──
+
+  app.get('/issues/:issueId/work-products', { schema: { params: idParams }, preHandler: [requireActor] }, async (request) => {
+    const { issueId } = idParams.parse(request.params);
+    const issue = await svc.getById(issueId);
+    return wpSvc.listForIssue(issue.id);
+  });
+
+  app.post('/issues/:issueId/work-products', { preHandler: [requireActor] }, async (request, reply) => {
+    const { issueId } = idParams.parse(request.params);
+    const body = createWorkProductBody.parse(request.body);
+    const issue = await svc.getById(issueId);
+    const product = await wpSvc.createForIssue(issue.id, issue.companyId, {
+      ...body,
+      projectId: body.projectId ?? issue.projectId ?? null,
+    });
+    if (!product) return reply.code(422).send({ error: { code: 'UNPROCESSABLE', message: 'Failed to create work product' } });
+    return reply.code(201).send(product);
+  });
+
+  app.patch('/work-products/:workProductId', { preHandler: [requireActor] }, async (request, reply) => {
+    const { workProductId } = workProductIdParams.parse(request.params);
+    const body = updateWorkProductBody.parse(request.body);
+    const product = await wpSvc.update(workProductId, body);
+    if (!product) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Work product not found' } });
+    return product;
+  });
+
+  app.delete('/work-products/:workProductId', { preHandler: [requireActor] }, async (request, reply) => {
+    const { workProductId } = workProductIdParams.parse(request.params);
+    const removed = await wpSvc.remove(workProductId);
+    if (!removed) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Work product not found' } });
+    return removed;
   });
 };

@@ -17,8 +17,9 @@
  */
 
 import { eq, and, ne, desc, inArray } from 'drizzle-orm';
-import { agentRuntimeState, agents, issues, heartbeatRuns, projectWorkspaces } from '@ghostwork/db';
+import { agentRuntimeState, agents, issues, heartbeatRuns, projectWorkspaces, issueWorkProducts } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
+import { workProductService } from '../services/work-products.js';
 import type {
   AdapterExecutionContext,
   AdapterExecutionResult,
@@ -88,6 +89,110 @@ export const REJECTION_PATTERNS = [/\brejected?\b/i, /\bfail(ed|ure|s)?\b/i, /\b
 
 /** Approval signal patterns in QA run summaries */
 export const APPROVAL_PATTERNS = [/\bapproved?\b/i, /\blooks?\s*good\b/i, /\blgtm\b/i];
+
+/**
+ * Extract PR URLs from a summary string.
+ * Matches GitHub/GitLab PR/MR URLs.
+ */
+export function parsePRUrls(summary: string): Array<{ url: string; provider: string; externalId: string }> {
+  const prPattern = /https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)/g;
+  const results: Array<{ url: string; provider: string; externalId: string }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = prPattern.exec(summary)) !== null) {
+    results.push({ url: match[0], provider: 'github', externalId: match[1]! });
+  }
+  return results;
+}
+
+/**
+ * Extract branch name from summary text.
+ * Looks for patterns like "branch: feature/x" or "on branch `feature/x`".
+ */
+export function parseBranchName(summary: string): string | null {
+  const patterns = [
+    /branch[:\s]+[`"]?([a-zA-Z0-9_./-]+)[`"]?/i,
+    /on\s+(?:the\s+)?branch\s+[`"]?([a-zA-Z0-9_./-]+)[`"]?/i,
+    /pushed?\s+to\s+[`"]?([a-zA-Z0-9_./-]+)[`"]?/i,
+  ];
+  for (const pattern of patterns) {
+    const m = pattern.exec(summary);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Auto-register a work product (PR) from a developer's summary.
+ */
+async function registerWorkProductFromSummary(
+  db: Db,
+  issueId: string,
+  companyId: string,
+  summary: string,
+  runId: string,
+  projectId: string | null,
+): Promise<void> {
+  const prs = parsePRUrls(summary);
+  if (prs.length === 0) return;
+
+  const wpSvc = workProductService(db);
+
+  for (const pr of prs) {
+    // Check if this PR is already registered
+    const existing = await wpSvc.listForIssue(issueId);
+    const alreadyExists = existing.some(
+      (wp) => wp.type === 'pull_request' && wp.provider === pr.provider && wp.externalId === pr.externalId,
+    );
+    if (alreadyExists) continue;
+
+    await wpSvc.createForIssue(issueId, companyId, {
+      type: 'pull_request',
+      provider: pr.provider,
+      externalId: pr.externalId,
+      title: `PR #${pr.externalId}`,
+      url: pr.url,
+      status: 'open',
+      reviewState: 'none',
+      isPrimary: prs.indexOf(pr) === 0,
+      createdByRunId: runId,
+      projectId,
+    });
+  }
+}
+
+/**
+ * Update all open work products for an issue to a given review state.
+ */
+async function updateWorkProductReviewState(
+  db: Db,
+  issueId: string,
+  reviewState: 'none' | 'approved' | 'changes_requested',
+): Promise<void> {
+  await db
+    .update(issueWorkProducts)
+    .set({ reviewState, updatedAt: new Date() })
+    .where(
+      and(
+        eq(issueWorkProducts.issueId, issueId),
+        eq(issueWorkProducts.type, 'pull_request'),
+        eq(issueWorkProducts.status, 'open'),
+      ),
+    );
+}
+
+/**
+ * Get work product info for the developer rework prompt.
+ */
+async function getWorkProductInfo(db: Db, issueId: string): Promise<{ prUrl: string; branchName: string | null } | null> {
+  const wpSvc = workProductService(db);
+  const products = await wpSvc.listForIssue(issueId);
+  const pr = products.find((wp) => wp.type === 'pull_request' && wp.status === 'open');
+  if (!pr) return null;
+  return {
+    prUrl: pr.url ?? '',
+    branchName: (pr.metadata?.['branchName'] as string | null) ?? null,
+  };
+}
 
 export interface ExecuteRunInput {
   run: {
@@ -214,7 +319,8 @@ export async function executeRun(
     } else if (DEVELOPER_ROLES.has(agentRole)) {
       // Developer agent — check if there's QA feedback to address
       const qaFeedback = await getQAFeedback(db, issueData.id, run.id);
-      prompt = buildDeveloperPrompt(issueData, qaFeedback);
+      const wpInfo = qaFeedback ? await getWorkProductInfo(db, issueData.id) : null;
+      prompt = buildDeveloperPrompt(issueData, qaFeedback, wpInfo);
     } else {
       prompt = `Task: ${issueData.title}\n\nDescription: ${issueData.description || 'No description'}\n\nPlease complete this task.`;
     }
@@ -591,11 +697,12 @@ function buildQAPrompt(
 }
 
 /**
- * Build developer prompt, optionally including QA feedback.
+ * Build developer prompt, optionally including QA feedback and work product info.
  */
-function buildDeveloperPrompt(
+export function buildDeveloperPrompt(
   issue: { title: string; description: string | null },
   qaFeedback: string | null,
+  workProductInfo?: { prUrl: string; branchName: string | null } | null,
 ): string {
   const parts = [
     `Task: ${issue.title}`,
@@ -607,6 +714,23 @@ function buildDeveloperPrompt(
     parts.push(
       '',
       `Previous QA feedback: ${qaFeedback}`,
+    );
+
+    if (workProductInfo?.prUrl) {
+      parts.push(
+        '',
+        `Existing PR: ${workProductInfo.prUrl}`,
+      );
+      if (workProductInfo.branchName) {
+        parts.push(`Branch: ${workProductInfo.branchName}`);
+      }
+      parts.push(
+        '',
+        'IMPORTANT: Fix the issues on the existing branch. Do NOT create a new PR. Push your fixes to the same branch so the existing PR is updated.',
+      );
+    }
+
+    parts.push(
       '',
       'Please address the feedback and complete the task.',
     );
@@ -636,6 +760,11 @@ async function handleSuccessfulIssueCompletion(
   const activity = activityService(db);
 
   if (DEVELOPER_ROLES.has(role)) {
+    // Auto-register work products (PRs) from developer summary
+    const issueRow = await db.select({ projectId: issues.projectId }).from(issues).where(eq(issues.id, issueData.id)).limit(1);
+    const projectId = issueRow[0]?.projectId ?? null;
+    await registerWorkProductFromSummary(db, issueData.id, agent.companyId, summary, run.id, projectId);
+
     // Check if company has a QA agent
     const hasQA = await companyHasQAAgent(db, agent.companyId);
 
@@ -704,6 +833,9 @@ async function handleSuccessfulIssueCompletion(
         .set({ status: 'done', completedAt: new Date(), updatedAt: new Date() })
         .where(eq(issues.id, issueData.id));
 
+      // Mark open PRs as approved
+      await updateWorkProductReviewState(db, issueData.id, 'approved');
+
       // Generate and store completion report
       try {
         const report = await generateSimpleCompletionReport(db, issueData, summary);
@@ -739,6 +871,9 @@ async function handleSuccessfulIssueCompletion(
         .update(issues)
         .set({ status: 'todo', updatedAt: new Date() })
         .where(eq(issues.id, issueData.id));
+
+      // Mark open PRs as changes_requested (keep PRs open)
+      await updateWorkProductReviewState(db, issueData.id, 'changes_requested');
 
       await activity.log({
         companyId: run.companyId,

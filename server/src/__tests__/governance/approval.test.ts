@@ -113,9 +113,9 @@ describe('Approval hire hook logic', () => {
   });
 
   it('approved budget_override should not activate agent', () => {
-    const approval = {
-      type: 'budget_override_required' as const,
-      status: 'approved' as const,
+    const approval: { type: string; status: string; payload: { agentId: string } } = {
+      type: 'budget_override_required',
+      status: 'approved',
       payload: { agentId: 'agent-456' },
     };
 
