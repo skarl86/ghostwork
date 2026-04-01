@@ -15,6 +15,13 @@
       "when": 1774928688217,
       "tag": "0001_board_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775042720294,
+      "tag": "0002_melted_angel",
+      "breakpoints": true
     }
   ]
 }
