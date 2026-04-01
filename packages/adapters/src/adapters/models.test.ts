@@ -43,8 +43,9 @@ describe('Built-in adapter model definitions', () => {
 
     it('includes expected model IDs', () => {
       const ids = claudeLocalAdapter.models!.map((m) => m.id);
+      expect(ids).toContain('claude-opus-4-6');
+      expect(ids).toContain('claude-sonnet-4-6');
       expect(ids).toContain('claude-sonnet-4-5');
-      expect(ids).toContain('claude-opus-4');
       expect(ids).toContain('claude-haiku-3-5');
     });
 

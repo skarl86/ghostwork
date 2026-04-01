@@ -201,8 +201,9 @@ export const claudeLocalAdapter: ServerAdapterModule = {
   type: 'claude-local',
 
   models: [
+    { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic' },
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic' },
     { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', provider: 'anthropic' },
-    { id: 'claude-opus-4', name: 'Claude Opus 4', provider: 'anthropic' },
     { id: 'claude-haiku-3-5', name: 'Claude Haiku 3.5', provider: 'anthropic' },
   ],
 

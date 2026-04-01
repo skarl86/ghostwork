@@ -44,6 +44,8 @@ export const codexLocalAdapter: ServerAdapterModule = {
   type: 'codex-local',
 
   models: [
+    { id: 'gpt-5.4', name: 'GPT-5.4', provider: 'openai' },
+    { id: 'o3-pro', name: 'o3-pro', provider: 'openai' },
     { id: 'o3', name: 'o3', provider: 'openai' },
     { id: 'o4-mini', name: 'o4-mini', provider: 'openai' },
     { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'openai' },

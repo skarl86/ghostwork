@@ -198,8 +198,8 @@ export function AgentList() {
                         <SelectValue placeholder="Select a model" />
                       </SelectTrigger>
                       <SelectContent>
-                        {models.map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
+                        {models.map((m: { id: string; name: string; provider: string }) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
