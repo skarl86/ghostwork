@@ -18,47 +18,48 @@ function canTransition(from: string, to: ApprovalStatus): boolean {
 
 describe('Approval workflow state machine', () => {
   describe('valid transitions', () => {
-    it('pending → approved', () => {
-      expect(canTransition('pending', 'approved')).toBe(true);
-    });
-
-    it('pending → rejected', () => {
-      expect(canTransition('pending', 'rejected')).toBe(true);
-    });
-
-    it('pending → revision_requested', () => {
-      expect(canTransition('pending', 'revision_requested')).toBe(true);
-    });
-
-    it('revision_requested → approved', () => {
-      expect(canTransition('revision_requested', 'approved')).toBe(true);
-    });
-
-    it('revision_requested → rejected', () => {
-      expect(canTransition('revision_requested', 'rejected')).toBe(true);
-    });
-
-    it('revision_requested → pending (re-submit)', () => {
-      expect(canTransition('revision_requested', 'pending')).toBe(true);
+    it.each<[ApprovalStatus, ApprovalStatus]>([
+      ['pending', 'approved'],
+      ['pending', 'rejected'],
+      ['pending', 'revision_requested'],
+      ['revision_requested', 'pending'],
+      ['revision_requested', 'approved'],
+      ['revision_requested', 'rejected'],
+    ])('%s → %s (valid)', (from, to) => {
+      expect(canTransition(from, to)).toBe(true);
     });
   });
 
   describe('invalid transitions', () => {
-    it('approved → pending', () => {
-      expect(canTransition('approved', 'pending')).toBe(false);
+    it.each<[ApprovalStatus, ApprovalStatus]>([
+      // Terminal states — no transitions out
+      ['approved', 'pending'],
+      ['approved', 'rejected'],
+      ['approved', 'revision_requested'],
+      ['approved', 'approved'], // self-transition
+      ['rejected', 'pending'],
+      ['rejected', 'approved'],
+      ['rejected', 'revision_requested'],
+      ['rejected', 'rejected'], // self-transition
+      // Self-transitions
+      ['pending', 'pending'],
+      ['revision_requested', 'revision_requested'],
+    ])('%s → %s (invalid)', (from, to) => {
+      expect(canTransition(from, to)).toBe(false);
     });
+  });
 
-    it('approved → rejected', () => {
-      expect(canTransition('approved', 'rejected')).toBe(false);
-    });
+  describe('terminal states have no outbound transitions', () => {
+    const terminalStates: ApprovalStatus[] = ['approved', 'rejected'];
+    const allStatuses: ApprovalStatus[] = ['pending', 'approved', 'rejected', 'revision_requested'];
 
-    it('rejected → approved', () => {
-      expect(canTransition('rejected', 'approved')).toBe(false);
-    });
-
-    it('rejected → pending', () => {
-      expect(canTransition('rejected', 'pending')).toBe(false);
-    });
+    for (const terminal of terminalStates) {
+      it(`${terminal} has no valid transitions`, () => {
+        for (const target of allStatuses) {
+          expect(canTransition(terminal, target)).toBe(false);
+        }
+      });
+    }
   });
 });
 
@@ -76,14 +77,12 @@ describe('Approval types', () => {
 
 describe('Approval hire hook logic', () => {
   it('approved new_agent_hire should activate agent (status → idle)', () => {
-    // Simulate the hook logic
     const approval = {
       type: 'new_agent_hire' as const,
       status: 'approved' as const,
       payload: { agentId: 'agent-123' },
     };
 
-    // When approved and type is new_agent_hire → agent status should be set to idle
     let activatedAgentId: string | null = null;
     if (approval.status === 'approved' && approval.type === 'new_agent_hire') {
       const payload = approval.payload as { agentId?: string };
@@ -100,6 +99,42 @@ describe('Approval hire hook logic', () => {
       type: 'new_agent_hire',
       status: 'rejected',
       payload: { agentId: 'agent-123' },
+    };
+
+    let activatedAgentId: string | null = null;
+    if (approval.status === 'approved' && approval.type === 'new_agent_hire') {
+      const payload = approval.payload as { agentId?: string };
+      if (payload.agentId) {
+        activatedAgentId = payload.agentId;
+      }
+    }
+
+    expect(activatedAgentId).toBeNull();
+  });
+
+  it('approved budget_override should not activate agent', () => {
+    const approval = {
+      type: 'budget_override_required' as const,
+      status: 'approved' as const,
+      payload: { agentId: 'agent-456' },
+    };
+
+    let activatedAgentId: string | null = null;
+    if (approval.status === 'approved' && approval.type === 'new_agent_hire') {
+      const payload = approval.payload as { agentId?: string };
+      if (payload.agentId) {
+        activatedAgentId = payload.agentId;
+      }
+    }
+
+    expect(activatedAgentId).toBeNull();
+  });
+
+  it('approved new_agent_hire with missing agentId should not activate', () => {
+    const approval = {
+      type: 'new_agent_hire' as const,
+      status: 'approved' as const,
+      payload: {} as { agentId?: string },
     };
 
     let activatedAgentId: string | null = null;
