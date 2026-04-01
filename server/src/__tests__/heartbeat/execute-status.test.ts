@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { determineStatus, APPROVAL_PATTERNS, ACTIVE_RUN_STATUSES } from '../../heartbeat/execute.js';
+import { determineStatus, APPROVAL_PATTERNS, REJECTION_PATTERNS, ACTIVE_RUN_STATUSES } from '../../heartbeat/execute.js';
 
 // ── determineStatus ──
 
@@ -63,17 +63,6 @@ describe('QA approval pattern matching', () => {
       'approved',
       'The changes are approved.',
       'I approve this work.',
-    ])('matches "%s"', (summary) => {
-      expect(matchesApproval(summary)).toBe(true);
-    });
-  });
-
-  describe('passed signals', () => {
-    it.each([
-      'All tests passed',
-      'PASSED',
-      'pass',
-      'The code review has passed.',
     ])('matches "%s"', (summary) => {
       expect(matchesApproval(summary)).toBe(true);
     });
@@ -218,6 +207,79 @@ describe('Issue status transition flow', () => {
       const nextIssueStatus: IssueStatus = status === 'succeeded' ? 'done' : 'todo';
       expect(nextIssueStatus).toBe('todo');
     });
+  });
+});
+
+// ── REJECTION_PATTERNS (QA rejection signal matching) ──
+
+function matchesRejection(summary: string): boolean {
+  return REJECTION_PATTERNS.some((pattern) => pattern.test(summary));
+}
+
+/** Combined logic matching executeRun: rejection checked first */
+function isApprovedVerdict(summary: string): boolean {
+  if (matchesRejection(summary)) return false;
+  return matchesApproval(summary);
+}
+
+describe('QA rejection pattern matching', () => {
+  describe('explicit rejection signals', () => {
+    it.each([
+      'REJECTED: needs more tests',
+      'rejected',
+      'The PR was rejected.',
+      'Failed: compilation errors',
+      'Tests failed',
+      'Build failure detected',
+      'not approved',
+      'NOT APPROVED',
+    ])('matches "%s"', (summary) => {
+      expect(matchesRejection(summary)).toBe(true);
+    });
+  });
+
+  describe('approval signals should not match rejection', () => {
+    it.each([
+      'APPROVED',
+      'Looks good',
+      'LGTM',
+    ])('does not match "%s"', (summary) => {
+      expect(matchesRejection(summary)).toBe(false);
+    });
+  });
+});
+
+describe('Combined QA verdict (rejection takes priority)', () => {
+  it('REJECTED summary with "pass" in body is still rejected', () => {
+    const summary = 'REJECTED: The tests would pass even if the code was deleted.';
+    expect(isApprovedVerdict(summary)).toBe(false);
+  });
+
+  it('REJECTED summary with "approved" in body is still rejected', () => {
+    const summary = 'REJECTED: The previously approved tests are inadequate.';
+    expect(isApprovedVerdict(summary)).toBe(false);
+  });
+
+  it('REJECTED summary with "looks good" in body is still rejected', () => {
+    const summary = 'REJECTED: While the code looks good, tests are missing.';
+    expect(isApprovedVerdict(summary)).toBe(false);
+  });
+
+  it('clean APPROVED is approved', () => {
+    expect(isApprovedVerdict('APPROVED')).toBe(true);
+  });
+
+  it('clean LGTM is approved', () => {
+    expect(isApprovedVerdict('LGTM')).toBe(true);
+  });
+
+  it('ambiguous text with no clear signal is not approved', () => {
+    expect(isApprovedVerdict('Needs more work')).toBe(false);
+  });
+
+  it('exact reproduction of the bug: REJECTED with pass in explanation', () => {
+    const summary = 'REJECTED: The tests at execute-status.test.ts do not actually test the implementation. They would pass even if the code was deleted entirely.';
+    expect(isApprovedVerdict(summary)).toBe(false);
   });
 });
 
