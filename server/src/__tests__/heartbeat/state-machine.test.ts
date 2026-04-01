@@ -49,6 +49,28 @@ describe('Run State Machine', () => {
       ['failed', 'succeeded'],
       ['deferred_issue_execution', 'running'],
       ['deferred_issue_execution', 'succeeded'],
+      ['deferred_issue_execution', 'failed'],
+      ['deferred_issue_execution', 'cancelled'],
+      ['deferred_issue_execution', 'timed_out'],
+      ['deferred_issue_execution', 'deferred_issue_execution'], // self-transition
+      ['failed', 'failed'], // self-transition
+      ['failed', 'cancelled'],
+      ['failed', 'timed_out'],
+      ['failed', 'deferred_issue_execution'],
+      ['succeeded', 'succeeded'], // self-transition
+      ['succeeded', 'cancelled'],
+      ['succeeded', 'timed_out'],
+      ['succeeded', 'deferred_issue_execution'],
+      ['cancelled', 'cancelled'], // self-transition
+      ['cancelled', 'succeeded'],
+      ['cancelled', 'failed'],
+      ['cancelled', 'timed_out'],
+      ['cancelled', 'deferred_issue_execution'],
+      ['timed_out', 'timed_out'], // self-transition
+      ['timed_out', 'succeeded'],
+      ['timed_out', 'failed'],
+      ['timed_out', 'cancelled'],
+      ['timed_out', 'deferred_issue_execution'],
     ])('%s → %s (invalid)', (from, to) => {
       expect(canTransition(from, to)).toBe(false);
       expect(() => transition(from, to)).toThrow(/invalid transition/i);

@@ -2,17 +2,21 @@
  * Heartbeat Execute Flow — ties adapters to the heartbeat engine.
  *
  * executeRun():
- * 1. Build AdapterExecutionContext from run + agent
- * 2. Get adapter from registry
- * 3. Publish run.status → running
- * 4. Call adapter.execute()
- * 5. Log events via onLog → logRunEvent + publish live log
- * 6. On completion: call completeRun + publish run.status
- * 7. Update agent_runtime_state (session)
- * 8. Remove from runningProcesses
+ *  1. Look up adapter from registry
+ *  2. Issue checkout: fetch and lock issue (if issue run)
+ *  3. Mark agent as running + publish agent.status → running
+ *  4. Build AdapterExecutionContext (context, skills, workspace cwd)
+ *  5. Track in runningProcesses + call adapter.execute()
+ *  6. Determine terminal status from adapter result
+ *  7. Complete run via completeRun()
+ *  8. Update issue status (Dev↔QA flow, PM orchestration)
+ *  9. Publish run.status → terminal
+ * 10. Update agent_runtime_state with session info
+ * 11. Reset agent status to idle (if no other active runs)
+ * 12. Remove from runningProcesses (finally)
  */
 
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, ne, desc, inArray } from 'drizzle-orm';
 import { agentRuntimeState, agents, issues, heartbeatRuns, projectWorkspaces } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import type {
@@ -21,6 +25,15 @@ import type {
   AdapterRegistry,
 } from '@ghostwork/adapters';
 import { completeRun, type CompleteRunInput } from './completion.js';
+
+/**
+ * Run statuses considered "active" — used when checking whether an agent
+ * still has pending work before transitioning it back to idle.
+ *
+ * Includes `deferred_issue_execution` because that status is non-terminal:
+ * the run will transition back to `queued` once the issue lock releases.
+ */
+export const ACTIVE_RUN_STATUSES = ['queued', 'running', 'deferred_issue_execution'] as const;
 import { checkoutIssue, releaseIssue } from './checkout.js';
 import { logRunEvent } from './events.js';
 import type { ProcessHandle } from './types.js';
@@ -71,7 +84,7 @@ const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
 export const QA_ROLES = new Set(['qa', 'reviewer', '리뷰어']);
 
 /** Approval signal patterns in QA run summaries */
-const APPROVAL_PATTERNS = [/\bapproved?\b/i, /\bpass(ed)?\b/i, /\blooks?\s*good\b/i, /\blgtm\b/i];
+export const APPROVAL_PATTERNS = [/\bapproved?\b/i, /\bpass(ed)?\b/i, /\blooks?\s*good\b/i, /\blgtm\b/i];
 
 export interface ExecuteRunInput {
   run: {
@@ -154,7 +167,22 @@ export async function executeRun(
     issueData = { id: issue.id, title: issue.title, description: issue.description, status: issue.status };
   }
 
-  // 3. Publish run status → running
+  // 3. Mark agent as running
+  await db
+    .update(agents)
+    .set({ status: 'running', updatedAt: new Date() })
+    .where(eq(agents.id, agent.id));
+
+  eventBus?.publish({
+    companyId: run.companyId,
+    type: 'agent.status',
+    payload: {
+      agentId: agent.id,
+      status: 'running',
+    },
+  });
+
+  // Publish run status → running
   eventBus?.publish({
     companyId: run.companyId,
     type: 'heartbeat.run.status',
@@ -365,7 +393,36 @@ export async function executeRun(
 
     return completed;
   } finally {
-    // 11. Remove from running processes
+    // 11. Reset agent status to idle only if no other active runs exist
+    const otherActiveRuns = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.agentId, agent.id),
+          ne(heartbeatRuns.id, run.id),
+          inArray(heartbeatRuns.status, [...ACTIVE_RUN_STATUSES]),
+        ),
+      )
+      .limit(1);
+
+    if (otherActiveRuns.length === 0) {
+      await db
+        .update(agents)
+        .set({ status: 'idle', updatedAt: new Date() })
+        .where(eq(agents.id, agent.id));
+
+      eventBus?.publish({
+        companyId: run.companyId,
+        type: 'agent.status',
+        payload: {
+          agentId: agent.id,
+          status: 'idle',
+        },
+      });
+    }
+
+    // 12. Remove from running processes
     runningProcesses.delete(run.id);
   }
 }
@@ -373,8 +430,8 @@ export async function executeRun(
 /**
  * Determine terminal run status from adapter result.
  */
-function determineStatus(
-  result: AdapterExecutionResult,
+export function determineStatus(
+  result: Pick<AdapterExecutionResult, 'timedOut' | 'exitCode'>,
 ): 'succeeded' | 'failed' | 'timed_out' {
   if (result.timedOut) return 'timed_out';
   if (result.exitCode === 0) return 'succeeded';
