@@ -2,7 +2,7 @@
  * Issue service — CRUD operations for issues.
  */
 
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { issues, projects } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import { NotFoundError, ConflictError } from '../errors.js';
@@ -174,6 +174,49 @@ export function issueService(db: Db) {
         });
       }
       return row;
+    },
+
+    /**
+     * Cancel an issue and all its descendants recursively.
+     * Skips issues already in 'done' or 'cancelled' state.
+     * Returns all newly-cancelled issues (including the root).
+     */
+    async cancelWithCascade(issueId: string) {
+      const now = new Date();
+
+      // BFS to collect the root + all descendant IDs
+      const allIds: string[] = [issueId];
+      const queue: string[] = [issueId];
+      while (queue.length > 0) {
+        const parentId = queue.shift()!;
+        const children = await db
+          .select({ id: issues.id })
+          .from(issues)
+          .where(eq(issues.parentId, parentId));
+        for (const child of children) {
+          allIds.push(child.id);
+          queue.push(child.id);
+        }
+      }
+
+      // Fetch full rows to check status and get executionRunId
+      const rows = await db
+        .select()
+        .from(issues)
+        .where(inArray(issues.id, allIds));
+
+      const toCancel = rows.filter(
+        (i) => i.status !== 'cancelled' && i.status !== 'done',
+      );
+
+      if (toCancel.length > 0) {
+        await db
+          .update(issues)
+          .set({ status: 'cancelled', cancelledAt: now, updatedAt: now })
+          .where(inArray(issues.id, toCancel.map((i) => i.id)));
+      }
+
+      return toCancel;
     },
 
     async remove(id: string) {

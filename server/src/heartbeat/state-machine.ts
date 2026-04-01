@@ -25,9 +25,9 @@ export const TERMINAL_STATUSES: ReadonlySet<RunStatus> = new Set([
  * Key = current status, Value = set of valid target statuses.
  */
 const VALID_TRANSITIONS: Record<string, ReadonlySet<RunStatus>> = {
-  queued: new Set<RunStatus>(['running', 'queued', 'deferred_issue_execution']),
+  queued: new Set<RunStatus>(['running', 'queued', 'deferred_issue_execution', 'cancelled']),
   running: new Set<RunStatus>(['succeeded', 'failed', 'cancelled', 'timed_out']),
-  deferred_issue_execution: new Set<RunStatus>(['queued']),
+  deferred_issue_execution: new Set<RunStatus>(['queued', 'cancelled']),
   failed: new Set<RunStatus>(['queued']),
   // succeeded, cancelled, timed_out → no valid transitions (terminal)
 };

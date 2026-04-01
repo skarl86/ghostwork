@@ -16,6 +16,8 @@ describe('Run State Machine', () => {
       ['queued', 'running'],
       ['queued', 'queued'], // coalescing
       ['queued', 'deferred_issue_execution'],
+      ['queued', 'cancelled'], // direct cancel
+      ['deferred_issue_execution', 'cancelled'], // cancel while deferred
       ['running', 'succeeded'],
       ['running', 'failed'],
       ['running', 'cancelled'],
@@ -33,7 +35,6 @@ describe('Run State Machine', () => {
     it.each<[RunStatus, RunStatus]>([
       ['queued', 'succeeded'],
       ['queued', 'failed'],
-      ['queued', 'cancelled'],
       ['queued', 'timed_out'],
       ['running', 'queued'],
       ['running', 'deferred_issue_execution'],
@@ -50,7 +51,6 @@ describe('Run State Machine', () => {
       ['deferred_issue_execution', 'running'],
       ['deferred_issue_execution', 'succeeded'],
       ['deferred_issue_execution', 'failed'],
-      ['deferred_issue_execution', 'cancelled'],
       ['deferred_issue_execution', 'timed_out'],
       ['deferred_issue_execution', 'deferred_issue_execution'], // self-transition
       ['failed', 'failed'], // self-transition
