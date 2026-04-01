@@ -8,6 +8,7 @@ export { agentWakeupRequests } from './agent-wakeup-requests.js';
 export { projects } from './projects.js';
 export { projectWorkspaces } from './project-workspaces.js';
 export { executionWorkspaces } from './execution-workspaces.js';
+export { issueWorkProducts } from './issue-work-products.js';
 export { issues } from './issues.js';
 export { goals } from './goals.js';
 export { projectGoals } from './project-goals.js';

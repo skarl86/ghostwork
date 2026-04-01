@@ -25,27 +25,27 @@ describe('determineStatus', () => {
   });
 
   it('returns succeeded for exitCode 0 without timedOut', () => {
-    expect(determineStatus({ exitCode: 0 })).toBe('succeeded');
+    expect(determineStatus({ exitCode: 0, timedOut: false })).toBe('succeeded');
   });
 
   it('returns failed for non-zero exitCode', () => {
-    expect(determineStatus({ exitCode: 1 })).toBe('failed');
+    expect(determineStatus({ exitCode: 1, timedOut: false })).toBe('failed');
   });
 
   it('returns failed for exitCode 127', () => {
-    expect(determineStatus({ exitCode: 127 })).toBe('failed');
+    expect(determineStatus({ exitCode: 127, timedOut: false })).toBe('failed');
   });
 
   it('returns failed for negative exitCode', () => {
-    expect(determineStatus({ exitCode: -1 })).toBe('failed');
+    expect(determineStatus({ exitCode: -1, timedOut: false })).toBe('failed');
   });
 
   it('returns failed for null exitCode', () => {
-    expect(determineStatus({ exitCode: null })).toBe('failed');
+    expect(determineStatus({ exitCode: null as unknown as number, timedOut: false })).toBe('failed');
   });
 
   it('returns failed for undefined exitCode', () => {
-    expect(determineStatus({ exitCode: undefined })).toBe('failed');
+    expect(determineStatus({ exitCode: undefined as unknown as number, timedOut: false })).toBe('failed');
   });
 });
 
@@ -197,7 +197,7 @@ describe('Issue status transition flow', () => {
     });
 
     it('failed run → todo (revert)', () => {
-      const status = determineStatus({ exitCode: 1 });
+      const status = determineStatus({ exitCode: 1, timedOut: false });
       const nextIssueStatus: IssueStatus = status === 'succeeded' ? 'done' : 'todo';
       expect(nextIssueStatus).toBe('todo');
     });
