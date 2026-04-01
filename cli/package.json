@@ -1,10 +1,24 @@
 {
-  "name": "@paperclip/cli",
-  "version": "0.0.1",
+  "name": "@ghostwork/cli",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "ghostwork": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "dependencies": {
-    "@paperclip/shared": "workspace:*"
+    "@ghostwork/shared": "workspace:*",
+    "commander": "^14.0.0",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   },
   "scripts": {
     "build": "tsc",

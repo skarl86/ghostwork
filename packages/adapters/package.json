@@ -1,5 +1,5 @@
 {
-  "name": "@paperclip/adapters",
+  "name": "@ghostwork/adapters",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,11 +10,14 @@
     }
   },
   "dependencies": {
-    "@paperclip/shared": "workspace:*"
+    "@ghostwork/shared": "workspace:*"
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
   }
 }

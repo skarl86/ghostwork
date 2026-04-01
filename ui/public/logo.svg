@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Ghost body -->
+  <path d="M256 48C160 48 80 128 80 224v192c0 0 0 24 24 24s32-24 32-24 8 24 32 24 32-24 32-24 8 24 32 24 32-24 32-24 8 24 32 24 32-24 32-24 8 24 32 24 24-24 24-24V224c0-96-80-176-176-176z" fill="#8B5CF6"/>
+  <!-- Eyes -->
+  <circle cx="208" cy="224" r="28" fill="white"/>
+  <circle cx="304" cy="224" r="28" fill="white"/>
+  <circle cx="216" cy="228" r="14" fill="#1E1B4B"/>
+  <circle cx="312" cy="228" r="14" fill="#1E1B4B"/>
+  <!-- Code bracket hint: < > on the ghost body -->
+  <text x="190" y="320" font-family="monospace" font-size="64" font-weight="bold" fill="white" opacity="0.6">&lt;</text>
+  <text x="280" y="320" font-family="monospace" font-size="64" font-weight="bold" fill="white" opacity="0.6">&gt;</text>
+</svg>

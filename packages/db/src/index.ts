@@ -1,14 +1,20 @@
 /**
- * @paperclip/db — Database schema and ORM (placeholder)
- *
- * Phase 1에서 Drizzle ORM + PostgreSQL 스키마로 교체 예정
+ * @ghostwork/db — Database schema, client, and utilities
  */
 
-export interface DbConfig {
-  connectionString?: string;
-  embedded?: boolean;
-}
+// Schema exports
+export * from './schema/index.js';
 
-export function createDbPlaceholder(config: DbConfig): { config: DbConfig } {
-  return { config };
-}
+// Client
+export { createDb } from './client.js';
+export type { Db } from './client.js';
+
+// Embedded PostgreSQL
+export { getConnectionUrl } from './embedded.js';
+export type { EmbeddedPgResult } from './embedded.js';
+
+// Migration helpers
+export { inspectMigrations, applyPendingMigrations } from './migrate.js';
+
+// Type inference helpers
+export { type InferSelectModel, type InferInsertModel } from 'drizzle-orm';

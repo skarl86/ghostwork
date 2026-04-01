@@ -1,5 +1,5 @@
 /**
- * @paperclip/shared — Shared types and utilities
+ * @ghostwork/shared — Shared types and utilities
  */
 
 export interface Result<T, E = Error> {

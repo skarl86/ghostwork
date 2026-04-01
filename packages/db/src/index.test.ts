@@ -1,15 +1,46 @@
 import { describe, it, expect } from 'vitest';
-import { createDbPlaceholder } from './index.js';
+import * as schema from './schema/index.js';
 
-describe('DB placeholder', () => {
-  it('createDbPlaceholder — returns config', () => {
-    const db = createDbPlaceholder({ embedded: true });
-    expect(db.config.embedded).toBe(true);
-    expect(db.config.connectionString).toBeUndefined();
+describe('@ghostwork/db schema exports', () => {
+  it('exports all 25 tables', () => {
+    const tables = [
+      schema.companies,
+      schema.agents,
+      schema.agentRuntimeState,
+      schema.agentApiKeys,
+      schema.agentConfigRevisions,
+      schema.agentTaskSessions,
+      schema.agentWakeupRequests,
+      schema.projects,
+      schema.projectWorkspaces,
+      schema.executionWorkspaces,
+      schema.issues,
+      schema.goals,
+      schema.heartbeatRuns,
+      schema.heartbeatRunEvents,
+      schema.budgetPolicies,
+      schema.approvals,
+      schema.approvalComments,
+      schema.routines,
+      schema.routineTriggers,
+      schema.routineRuns,
+      schema.companyMemberships,
+      schema.instanceUserRoles,
+      schema.principalPermissionGrants,
+      schema.companySecrets,
+      schema.companySecretVersions,
+      schema.activityLog,
+    ];
+
+    // 26 table objects (approvalComments is separate from approvals)
+    expect(tables).toHaveLength(26);
+    for (const table of tables) {
+      expect(table).toBeDefined();
+    }
   });
 
-  it('createDbPlaceholder — accepts connectionString', () => {
-    const db = createDbPlaceholder({ connectionString: 'postgresql://localhost/test' });
-    expect(db.config.connectionString).toBe('postgresql://localhost/test');
+  it('exports createDb function', async () => {
+    const { createDb } = await import('./client.js');
+    expect(typeof createDb).toBe('function');
   });
 });

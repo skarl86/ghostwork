@@ -1,5 +1,7 @@
 packages:
-  - 'packages/*'
-  - 'server'
-  - 'ui'
-  - 'cli'
+  - packages/*
+  - server
+  - ui
+  - cli
+
+onlyBuiltDependencies: '["@embedded-postgres/darwin-x64","esbuild"]'

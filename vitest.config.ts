@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import path from 'node:path';
 
 export default defineConfig({
   test: {
@@ -10,6 +11,7 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       exclude: ['node_modules/', '**/dist/', '**/*.d.ts', '**/types.ts', '**/test/**'],
     },
+    exclude: ['e2e/**'],
     projects: [
       {
         test: {
@@ -32,6 +34,18 @@ export default defineConfig({
           isolate: true,
           sequence: {
             concurrent: false,
+          },
+          testTimeout: 30_000,
+          globalSetup: ['server/src/__tests__/globalSetup.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'ui',
+          environment: 'jsdom',
+          include: ['ui/src/**/*.test.ts', 'ui/src/**/*.test.tsx'],
+          alias: {
+            '@': path.resolve(__dirname, 'ui/src'),
           },
         },
       },

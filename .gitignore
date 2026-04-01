@@ -34,5 +34,10 @@ tmp/
 test-results/
 playwright-report/
 
+# Embedded PostgreSQL
+.embedded-pg/
+.test-pg/
+
 # Misc
 *.tgz
+.test-pg/

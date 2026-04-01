@@ -1,5 +1,5 @@
 {
-  "name": "@paperclip/db",
+  "name": "@ghostwork/db",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,7 +10,14 @@
     }
   },
   "dependencies": {
-    "@paperclip/shared": "workspace:*"
+    "@ghostwork/shared": "workspace:*",
+    "drizzle-orm": "^0.44.2",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "drizzle-kit": "^0.31.1",
+    "embedded-postgres": "^18.3.0-beta.16"
   },
   "scripts": {
     "build": "tsc",
