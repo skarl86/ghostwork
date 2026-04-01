@@ -29,6 +29,13 @@
       "when": 1775054002311,
       "tag": "0003_woozy_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775264280000,
+      "tag": "0004_add_sort_order",
+      "breakpoints": true
     }
   ]
 }
