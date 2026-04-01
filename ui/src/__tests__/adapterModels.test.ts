@@ -79,7 +79,7 @@ describe('fetchAdapterModels', () => {
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    const { fetchAdapterModels } = await import('../lib/api');
+    const { fetchAdapterModels, ApiError } = await import('../lib/api');
 
     await expect(fetchAdapterModels('claude-local')).rejects.toBeInstanceOf(ApiError);
   });
