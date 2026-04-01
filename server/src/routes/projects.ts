@@ -9,8 +9,15 @@ import { stat } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import type { Db } from '@ghostwork/db';
 import { projectWorkspaces } from '@ghostwork/db';
+import { cloneRepository, defaultCloneDir } from '../services/git-clone.js';
 import { projectService } from '../services/projects.js';
 import { requireActor } from '../hooks/require-actor.js';
+
+const cloneBody = z.object({
+  repoUrl: z.string().min(1).max(1000),
+  targetDir: z.string().max(1000).optional(),
+  branch: z.string().max(200).optional(),
+});
 
 const createBody = z.object({
   companyId: z.string().uuid(),
@@ -138,6 +145,69 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) =
       .where(eq(projectWorkspaces.projectId, projectId))
       .returning();
     return updated[0];
+  });
+
+  // ── Clone repository into workspace ──
+
+  interface CloneResponse {
+    cwd: string;
+    repoUrl: string;
+    branch: string;
+    cloned: boolean;
+  }
+
+  app.post('/projects/:projectId/workspace/clone', { schema: { params: idParams, body: cloneBody }, preHandler: [requireActor] }, async (request, reply) => {
+    const { projectId } = idParams.parse(request.params);
+    const body = cloneBody.parse(request.body);
+
+    if (!/^https?:\/\/.+/.test(body.repoUrl) && !body.repoUrl.includes('@')) {
+      return reply.code(400).send({ error: 'Invalid repository URL format' });
+    }
+
+    const project = await svc.getById(projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const targetDir = body.targetDir ?? defaultCloneDir(body.repoUrl);
+
+    let result: { cwd: string; branch: string; cloned: boolean };
+    try {
+      result = await cloneRepository(body.repoUrl, targetDir, body.branch);
+    } catch (err: unknown) {
+      const msg = (err as Error).message ?? String(err);
+      if (msg.includes('timed out') || msg.includes('ETIMEDOUT')) {
+        return reply.code(408).send({ error: msg });
+      }
+      return reply.code(400).send({ error: msg });
+    }
+
+    const existing = await db.select().from(projectWorkspaces).where(eq(projectWorkspaces.projectId, projectId)).limit(1);
+    const existingRow = existing[0];
+
+    if (existingRow) {
+      await db
+        .update(projectWorkspaces)
+        .set({ cwd: result.cwd, repoUrl: body.repoUrl, branch: result.branch })
+        .where(eq(projectWorkspaces.projectId, projectId));
+    } else {
+      await db
+        .insert(projectWorkspaces)
+        .values({
+          projectId,
+          companyId: project.companyId,
+          cwd: result.cwd,
+          repoUrl: body.repoUrl,
+          branch: result.branch,
+          createdAt: new Date(),
+        });
+    }
+
+    const response: CloneResponse = {
+      cwd: result.cwd,
+      repoUrl: body.repoUrl,
+      branch: result.branch,
+      cloned: result.cloned,
+    };
+    return reply.code(result.cloned ? 201 : 200).send(response);
   });
 
   // ── Validate workspace path ──
