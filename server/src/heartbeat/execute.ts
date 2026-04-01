@@ -12,7 +12,7 @@
  * 8. Remove from runningProcesses
  */
 
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, ne, desc, inArray } from 'drizzle-orm';
 import { agentRuntimeState, agents, issues, heartbeatRuns, projectWorkspaces } from '@ghostwork/db';
 import type { Db } from '@ghostwork/db';
 import type {
@@ -154,7 +154,13 @@ export async function executeRun(
     issueData = { id: issue.id, title: issue.title, description: issue.description, status: issue.status };
   }
 
-  // 3. Publish run status → running
+  // 3. Mark agent as running
+  await db
+    .update(agents)
+    .set({ status: 'running', updatedAt: new Date() })
+    .where(eq(agents.id, agent.id));
+
+  // Publish run status → running
   eventBus?.publish({
     companyId: run.companyId,
     type: 'heartbeat.run.status',
@@ -365,7 +371,36 @@ export async function executeRun(
 
     return completed;
   } finally {
-    // 11. Remove from running processes
+    // 11. Reset agent status to idle only if no other active runs exist
+    const otherActiveRuns = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.agentId, agent.id),
+          ne(heartbeatRuns.id, run.id),
+          inArray(heartbeatRuns.status, ['queued', 'running']),
+        ),
+      )
+      .limit(1);
+
+    if (otherActiveRuns.length === 0) {
+      await db
+        .update(agents)
+        .set({ status: 'idle', updatedAt: new Date() })
+        .where(eq(agents.id, agent.id));
+
+      eventBus?.publish({
+        companyId: run.companyId,
+        type: 'agent.status',
+        payload: {
+          agentId: agent.id,
+          status: 'idle',
+        },
+      });
+    }
+
+    // 12. Remove from running processes
     runningProcesses.delete(run.id);
   }
 }
