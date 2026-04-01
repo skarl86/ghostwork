@@ -219,6 +219,43 @@ export function issueService(db: Db) {
       return toCancel;
     },
 
+    /**
+     * Delete an issue and all its descendants recursively.
+     * BFS collects the entire subtree (regardless of status),
+     * then deletes all collected issues from the DB.
+     * Activity logs and heartbeat_runs are preserved for traceability.
+     * Returns the list of deleted issue IDs.
+     */
+    async deleteWithCascade(issueId: string) {
+      // BFS to collect all descendant IDs
+      const allIds: string[] = [issueId];
+      const queue: string[] = [issueId];
+      while (queue.length > 0) {
+        const parentId = queue.shift()!;
+        const children = await db
+          .select({ id: issues.id })
+          .from(issues)
+          .where(eq(issues.parentId, parentId));
+        for (const child of children) {
+          allIds.push(child.id);
+          queue.push(child.id);
+        }
+      }
+
+      // Fetch full rows to get executionRunId for active run cancellation
+      const rows = await db
+        .select()
+        .from(issues)
+        .where(inArray(issues.id, allIds));
+
+      // Delete all collected issues
+      if (allIds.length > 0) {
+        await db.delete(issues).where(inArray(issues.id, allIds));
+      }
+
+      return rows;
+    },
+
     async remove(id: string) {
       const rows = await db
         .delete(issues)

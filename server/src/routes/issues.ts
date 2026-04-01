@@ -191,22 +191,20 @@ export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => 
       executionLockedAt: null,
     } as Record<string, unknown>);
 
-    // Recursively cancel all sub-issues and stop their runs
+    // Recursively delete all sub-issues and stop their active runs
     const children = await svc.list({ companyId: updated.companyId, parentId: issueId });
-    let cancelledCount = 0;
+    let deletedCount = 0;
     for (const child of children) {
-      if (child.status !== 'cancelled' && child.status !== 'done') {
-        const cancelled = await svc.cancelWithCascade(child.id);
-        for (const issue of cancelled) {
-          if (issue.executionRunId) {
-            await cancelRunIfActive(db, issue.executionRunId).catch(() => undefined);
-          }
+      const deleted = await svc.deleteWithCascade(child.id);
+      for (const issue of deleted) {
+        if (issue.executionRunId) {
+          await cancelRunIfActive(db, issue.executionRunId).catch(() => undefined);
         }
-        cancelledCount += cancelled.length;
       }
+      deletedCount += deleted.length;
     }
 
-    return reply.code(200).send({ rejected: true, reason, cancelledSubIssues: cancelledCount });
+    return reply.code(200).send({ rejected: true, reason, deletedSubIssues: deletedCount });
   });
 
   // ── Completion Report ──
