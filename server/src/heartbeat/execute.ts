@@ -51,6 +51,7 @@ import {
   generateSimpleCompletionReport,
   storeCompletionReport,
 } from './pm-orchestrator.js';
+import { autoCommit } from './git-ops.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cloneRepository } from '../services/git-clone.js';
@@ -82,7 +83,7 @@ function getSkillDirsForRole(role: string): string[] {
 }
 
 /** Roles considered developer-type (complete → in_review when QA exists) */
-const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
+export const DEVELOPER_ROLES = new Set(['engineer', 'developer', 'general']);
 
 /** Roles considered QA/reviewer (auto-pick in_review issues) */
 export const QA_ROLES = new Set(['qa', 'reviewer', '리뷰어']);
@@ -898,6 +899,34 @@ async function handleSuccessfulIssueCompletion(
 
       // Mark open PRs as approved
       await updateWorkProductReviewState(db, issueData.id, 'approved');
+
+      // Auto-commit if this is a sub-task (has parentId)
+      const issueForCommit = await db
+        .select({ parentId: issues.parentId, projectId: issues.projectId })
+        .from(issues)
+        .where(eq(issues.id, issueData.id))
+        .limit(1);
+      const parentId = issueForCommit[0]?.parentId;
+      const projectIdForCommit = issueForCommit[0]?.projectId;
+
+      if (parentId && projectIdForCommit) {
+        const ws = await db
+          .select({ cwd: projectWorkspaces.cwd })
+          .from(projectWorkspaces)
+          .where(eq(projectWorkspaces.projectId, projectIdForCommit))
+          .limit(1);
+        const commitCwd = ws[0]?.cwd;
+        if (commitCwd) {
+          const commitResult = await autoCommit(commitCwd, `feat: ${issueData.title}`);
+          if (commitResult.error) {
+            console.error(`[executeRun] Auto-commit failed for sub-task ${issueData.id}: ${commitResult.error}`);
+          } else if (commitResult.committed) {
+            console.log(`[executeRun] Auto-committed sub-task ${issueData.id}: ${commitResult.sha}`);
+          } else {
+            console.log(`[executeRun] No changes to commit for sub-task ${issueData.id}`);
+          }
+        }
+      }
 
       // Generate and store completion report
       try {
