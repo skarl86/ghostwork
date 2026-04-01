@@ -22,6 +22,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
 
@@ -39,16 +40,4 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test --project unit
 
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: lint-and-typecheck
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+  # build is included in lint-and-typecheck (workspace packages need dist/ for cross-references)
