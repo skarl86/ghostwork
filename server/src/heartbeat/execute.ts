@@ -917,7 +917,7 @@ async function handleSuccessfulIssueCompletion(
           .limit(1);
         const commitCwd = ws[0]?.cwd;
         if (commitCwd) {
-          const commitResult = await autoCommit(commitCwd, `feat: ${issueData.title}`);
+          const commitResult = await autoCommit(commitCwd, `feat: ${issueData.title} (${issueData.id.slice(0, 8)})`);
           if (commitResult.error) {
             console.error(`[executeRun] Auto-commit failed for sub-task ${issueData.id}: ${commitResult.error}`);
           } else if (commitResult.committed) {

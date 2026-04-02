@@ -213,6 +213,14 @@ export async function createSubIssues(
     const branchResult = await createBranch(workspaceCwd, branchName);
     if (branchResult.error) {
       console.error(`[pm-orchestrator] Branch creation failed for ${parentIssueId}: ${branchResult.error}`);
+      await activityService(db).log({
+        companyId,
+        actorType: 'system',
+        action: 'git.branch_failed',
+        entityType: 'issue',
+        entityId: parentIssueId,
+        metadata: { error: branchResult.error, branchName },
+      });
     } else {
       console.log(
         `[pm-orchestrator] Branch ${branchName} ${branchResult.created ? 'created' : 'checked out'} for issue ${parentIssueId}`,
@@ -464,6 +472,66 @@ export async function storeCompletionReport(
     .where(eq(issues.id, issueId));
 }
 
+// ── PR Creation Helper ──
+
+/**
+ * Look up the workspace for a parent issue and push + create a PR.
+ * Shared by both APPROVED and auto_approved code paths.
+ */
+async function createPRForParentIssue(
+  db: Db,
+  companyId: string,
+  parentIssueId: string,
+  title: string,
+  body: string,
+): Promise<{ prUrl?: string; error?: string }> {
+  const parentIssueRows = await db
+    .select({ projectId: issues.projectId })
+    .from(issues)
+    .where(eq(issues.id, parentIssueId));
+  const projectId = parentIssueRows[0]?.projectId;
+
+  if (!projectId) {
+    return { error: 'No projectId found for parent issue' };
+  }
+
+  const ws = await db
+    .select({ cwd: projectWorkspaces.cwd })
+    .from(projectWorkspaces)
+    .where(eq(projectWorkspaces.projectId, projectId))
+    .limit(1);
+  const workspaceCwd = ws[0]?.cwd;
+
+  if (!workspaceCwd) {
+    return { error: 'No workspace cwd found for project' };
+  }
+
+  const branchName = `feat/${slugify(title)}`;
+  const prResult = await pushAndCreatePR(workspaceCwd, branchName, title, body);
+
+  if (prResult.prUrl) {
+    await activityService(db).log({
+      companyId,
+      actorType: 'system',
+      action: 'git.pr_created',
+      entityType: 'issue',
+      entityId: parentIssueId,
+      metadata: { prUrl: prResult.prUrl, branchName },
+    });
+  } else if (prResult.error) {
+    await activityService(db).log({
+      companyId,
+      actorType: 'system',
+      action: 'git.pr_failed',
+      entityType: 'issue',
+      entityId: parentIssueId,
+      metadata: { error: prResult.error, branchName },
+    });
+  }
+
+  return prResult;
+}
+
 // ── Sub-issue Status Checking ──
 
 /**
@@ -598,29 +666,13 @@ export async function handlePMReviewDecision(
       console.error(`[pm-orchestrator] Failed to generate completion report for ${parentIssueId}:`, err);
     }
 
-    // Auto-push and create PR on auto-approve too
-    const parentIssueRows = await db
-      .select({ projectId: issues.projectId })
-      .from(issues)
-      .where(eq(issues.id, parentIssueId));
-    const projectId = parentIssueRows[0]?.projectId;
-
-    if (projectId) {
-      const ws = await db
-        .select({ cwd: projectWorkspaces.cwd })
-        .from(projectWorkspaces)
-        .where(eq(projectWorkspaces.projectId, projectId))
-        .limit(1);
-      const cwdForPR = ws[0]?.cwd;
-      if (cwdForPR) {
-        const branchName = `feat/${slugify(parentTitle)}`;
-        const prResult = await pushAndCreatePR(cwdForPR, branchName, parentTitle, `Auto-approved after ${cycleCount} review cycles.`);
-        if (prResult.prUrl) {
-          console.log(`[pm-orchestrator] PR created (auto-approve) for ${parentIssueId}: ${prResult.prUrl}`);
-        } else if (prResult.error) {
-          console.error(`[pm-orchestrator] PR creation failed (auto-approve) for ${parentIssueId}: ${prResult.error}`);
-        }
-      }
+    // Auto-push and create PR on auto-approve
+    const autoApproveBody = `Auto-approved after ${cycleCount} review cycles.`;
+    const prResult = await createPRForParentIssue(db, companyId, parentIssueId, parentTitle, autoApproveBody);
+    if (prResult.prUrl) {
+      console.log(`[pm-orchestrator] PR created (auto-approve) for ${parentIssueId}: ${prResult.prUrl}`);
+    } else if (prResult.error) {
+      console.error(`[pm-orchestrator] PR creation failed (auto-approve) for ${parentIssueId}: ${prResult.error}`);
     }
 
     await activityService(db).log({
@@ -664,49 +716,14 @@ export async function handlePMReviewDecision(
     }
 
     // Auto-push and create PR
-    const parentIssueRows = await db
-      .select({ projectId: issues.projectId })
-      .from(issues)
-      .where(eq(issues.id, parentIssueId));
-    const projectId = parentIssueRows[0]?.projectId;
-
-    if (projectId) {
-      const ws = await db
-        .select({ cwd: projectWorkspaces.cwd })
-        .from(projectWorkspaces)
-        .where(eq(projectWorkspaces.projectId, projectId))
-        .limit(1);
-      const workspaceCwd = ws[0]?.cwd;
-
-      if (workspaceCwd) {
-        const branchName = `feat/${slugify(parentTitle)}`;
-        const prBody = report
-          ? `## ${report.issueTitle}\n\n${report.summary}\n\n### Sub-tasks: ${report.subtasks.length}\n### Total runs: ${report.totalRuns}\n### Total cost: $${report.totalCost}`
-          : review.review;
-        const prResult = await pushAndCreatePR(workspaceCwd, branchName, parentTitle, prBody);
-
-        if (prResult.error) {
-          console.error(`[pm-orchestrator] PR creation failed for ${parentIssueId}: ${prResult.error}`);
-          await activityService(db).log({
-            companyId,
-            actorType: 'system',
-            action: 'git.pr_failed',
-            entityType: 'issue',
-            entityId: parentIssueId,
-            metadata: { error: prResult.error, branchName },
-          });
-        } else if (prResult.prUrl) {
-          console.log(`[pm-orchestrator] PR created for ${parentIssueId}: ${prResult.prUrl}`);
-          await activityService(db).log({
-            companyId,
-            actorType: 'system',
-            action: 'git.pr_created',
-            entityType: 'issue',
-            entityId: parentIssueId,
-            metadata: { prUrl: prResult.prUrl, branchName },
-          });
-        }
-      }
+    const prBody = report
+      ? `## ${report.issueTitle}\n\n${report.summary}\n\n### Sub-tasks: ${report.subtasks.length}\n### Total runs: ${report.totalRuns}\n### Total cost: $${report.totalCost}`
+      : review.review;
+    const prResult = await createPRForParentIssue(db, companyId, parentIssueId, parentTitle, prBody);
+    if (prResult.prUrl) {
+      console.log(`[pm-orchestrator] PR created for ${parentIssueId}: ${prResult.prUrl}`);
+    } else if (prResult.error) {
+      console.error(`[pm-orchestrator] PR creation failed for ${parentIssueId}: ${prResult.error}`);
     }
 
     await activityService(db).log({

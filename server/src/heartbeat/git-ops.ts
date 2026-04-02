@@ -68,6 +68,28 @@ export async function autoCommit(
   message: string,
 ): Promise<{ committed: boolean; sha?: string; error?: string }> {
   try {
+    // Safety check: refuse to commit directly to main/master
+    const { stdout: currentBranch } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+    const branch = currentBranch.trim();
+    if (branch === 'main' || branch === 'master') {
+      return { committed: false, error: 'Refusing to commit directly to main/master branch' };
+    }
+
+    // Warn about untracked files before staging
+    try {
+      const { stdout: statusOutput } = await run('git', ['status', '--porcelain'], cwd);
+      const untrackedFiles = statusOutput
+        .split('\n')
+        .filter((line) => line.startsWith('??'));
+      if (untrackedFiles.length > 0) {
+        console.warn(
+          `[git-ops] ${untrackedFiles.length} untracked file(s) detected in ${cwd} — will be staged by git add -A`,
+        );
+      }
+    } catch {
+      // Non-fatal — proceed with commit even if status check fails
+    }
+
     // Stage all changes
     await run('git', ['add', '-A'], cwd);
 
