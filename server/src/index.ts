@@ -14,6 +14,7 @@ import { loadConfig } from './config.js';
 import { buildApp } from './app.js';
 import { createDb, getConnectionUrl, applyPendingMigrations, issues } from '@ghostwork/db';
 import { createScheduler } from './heartbeat/scheduler.js';
+import { createLiveEventBus } from './realtime/live-events.js';
 import {
   createAdapterRegistry,
   claudeLocalAdapter,
@@ -57,25 +58,30 @@ async function main(): Promise<void> {
     processAdapter,
   ]);
 
-  // 5. Build app (pass scheduler status getter for health route)
-  let schedulerRunning = false;
-  const app = await buildApp(db, config, undefined, () => schedulerRunning ? 'running' : 'stopped', adapterRegistry);
+  // 5. Create shared eventBus so both app and scheduler use the same instance
+  const eventBus = createLiveEventBus();
 
-  // 6. Listen
+  // 6. Create heartbeat scheduler before app so routes can access runningProcesses
+  let schedulerRunning = false;
+  const scheduler = createScheduler(db, {
+    intervalMs: 10_000, // tick every 10 seconds
+    apiUrl: `http://localhost:${config.port}`,
+  }, eventBus, adapterRegistry);
+
+  // 7. Build app (pass runningProcesses so issue cancellation can signal processes)
+  const app = await buildApp(db, config, eventBus, () => schedulerRunning ? 'running' : 'stopped', adapterRegistry, scheduler.runningProcesses);
+
+  // 8. Listen
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`Server listening on ${config.host}:${config.port} (mode: ${config.mode})`);
   app.log.info(`Registered adapters: ${adapterRegistry.list().map(a => a.type).join(', ')}`);
 
-  // 7. Start heartbeat scheduler
-  const scheduler = createScheduler(db, {
-    intervalMs: 10_000, // tick every 10 seconds
-    apiUrl: `http://localhost:${config.port}`,
-  }, app.eventBus, adapterRegistry);
+  // 9. Start scheduler
   scheduler.start();
   schedulerRunning = true;
   app.log.info('Heartbeat scheduler started (10s interval)');
 
-  // 8. Graceful shutdown
+  // 10. Graceful shutdown
   const shutdown = async (signal: string) => {
     app.log.info(`Received ${signal}, shutting down...`);
     scheduler.stop();

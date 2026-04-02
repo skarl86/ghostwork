@@ -348,6 +348,36 @@ describe('Issue Checkout / Release', () => {
     await db.update(heartbeatRuns).set({ status: 'succeeded', completedAt: new Date() })
       .where(eq(heartbeatRuns.id, deferredRun[0]!.id));
   });
+
+  it('releaseAndPromote — skips promotion for cancelled issue', async () => {
+    // Create a cancelled issue
+    const [cancelledIssue] = await db.insert(issues).values({
+      companyId,
+      title: 'Cancelled issue promotion guard test',
+      status: 'cancelled',
+    }).returning();
+
+    // Create a deferred run referencing the cancelled issue
+    const [deferredRun] = await db.insert(heartbeatRuns).values({
+      companyId,
+      agentId: agent2Id,
+      status: 'deferred_issue_execution',
+      contextSnapshot: { issueId: cancelledIssue!.id },
+      createdAt: new Date(),
+    }).returning();
+
+    // releaseAndPromote should not promote runs for a cancelled issue
+    const promoted = await releaseAndPromote(db, cancelledIssue!.id);
+    expect(promoted).toHaveLength(0);
+
+    // Verify deferred run remains deferred
+    const [updatedRun] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, deferredRun!.id));
+    expect(updatedRun!.status).toBe('deferred_issue_execution');
+
+    // Cleanup
+    await db.update(heartbeatRuns).set({ status: 'cancelled', completedAt: new Date() })
+      .where(eq(heartbeatRuns.id, deferredRun!.id));
+  });
 });
 
 describe('Run Completion', () => {

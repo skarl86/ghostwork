@@ -212,8 +212,21 @@ export function issueService(db: Db) {
       if (toCancel.length > 0) {
         await db
           .update(issues)
-          .set({ status: 'cancelled', cancelledAt: now, updatedAt: now })
+          .set({ status: 'cancelled', cancelledAt: now, updatedAt: now, executionRunId: null, executionLockedAt: null })
           .where(inArray(issues.id, toCancel.map((i) => i.id)));
+      }
+
+      // Log status_changed activity for the root issue (consistent with update())
+      const rootIssue = toCancel.find((i) => i.id === issueId);
+      if (rootIssue) {
+        await activityService(db).log({
+          companyId: rootIssue.companyId,
+          actorType: 'system',
+          action: 'issue.status_changed',
+          entityType: 'issue',
+          entityId: rootIssue.id,
+          metadata: { title: rootIssue.title, from: rootIssue.status, to: 'cancelled' },
+        });
       }
 
       return toCancel;

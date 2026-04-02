@@ -4,36 +4,13 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
-import { heartbeatRuns, type Db } from '@ghostwork/db';
+import { type Db } from '@ghostwork/db';
 import { issueService } from '../services/issues.js';
 import { workProductService } from '../services/work-products.js';
 import { checkoutIssue, releaseAndPromote } from '../heartbeat/checkout.js';
 import { requireActor } from '../hooks/require-actor.js';
-import { completeRun } from '../heartbeat/completion.js';
-
-/**
- * Cancel a run if it is still in an active (non-terminal) state.
- * - running → cancelled via state-machine-safe completeRun
- * - queued / deferred_issue_execution → direct DB update (no valid SM transition)
- */
-async function cancelRunIfActive(db: Db, runId: string): Promise<void> {
-  const rows = await db
-    .select({ id: heartbeatRuns.id, status: heartbeatRuns.status })
-    .from(heartbeatRuns)
-    .where(eq(heartbeatRuns.id, runId));
-  const run = rows[0];
-  if (!run) return;
-
-  if (run.status === 'running') {
-    await completeRun(db, runId, 'cancelled', { summary: 'Cancelled via issue cancellation' });
-  } else if (run.status === 'queued' || run.status === 'deferred_issue_execution') {
-    await db
-      .update(heartbeatRuns)
-      .set({ status: 'cancelled', completedAt: new Date() })
-      .where(eq(heartbeatRuns.id, runId));
-  }
-}
+import { cancelRun } from '../heartbeat/cancel.js';
+import type { ProcessHandle } from '../heartbeat/types.js';
 
 const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'plan_review', 'plan_rejected', 'done', 'closed', 'cancelled'] as const;
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
@@ -110,8 +87,8 @@ const updateWorkProductBody = createWorkProductBody.partial();
 
 const workProductIdParams = z.object({ workProductId: z.string().uuid() });
 
-export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => {
-  const { db } = opts;
+export const issueRoutes: FastifyPluginAsync<{ db: Db; runningProcesses?: Map<string, ProcessHandle> }> = async (app, opts) => {
+  const { db, runningProcesses } = opts;
   const svc = issueService(db);
   const wpSvc = workProductService(db);
 
@@ -147,7 +124,7 @@ export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => 
       const cancelled = await svc.cancelWithCascade(issueId);
       for (const issue of cancelled) {
         if (issue.executionRunId) {
-          await cancelRunIfActive(db, issue.executionRunId).catch(() => undefined);
+          await cancelRun(db, issue.executionRunId, runningProcesses ?? new Map()).catch(() => undefined);
         }
       }
       return svc.getById(issueId);
@@ -192,13 +169,13 @@ export const issueRoutes: FastifyPluginAsync<{ db: Db }> = async (app, opts) => 
     } as Record<string, unknown>);
 
     // Recursively delete all sub-issues and stop their active runs
-    const children = await svc.list({ companyId: updated.companyId, parentId: issueId });
+    const children = await svc.list({ companyId: updated.companyId, parentId: issueId, limit: 1000 });
     let deletedCount = 0;
     for (const child of children) {
       const deleted = await svc.deleteWithCascade(child.id);
       for (const issue of deleted) {
         if (issue.executionRunId) {
-          await cancelRunIfActive(db, issue.executionRunId).catch(() => undefined);
+          await cancelRun(db, issue.executionRunId, runningProcesses ?? new Map()).catch(() => undefined);
         }
       }
       deletedCount += deleted.length;

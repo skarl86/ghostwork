@@ -10,6 +10,7 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Db } from '@ghostwork/db';
 import type { AdapterRegistry } from '@ghostwork/adapters';
+import type { ProcessHandle } from './heartbeat/types.js';
 import type { AppConfig } from './config.js';
 import { errorHandler } from './errors.js';
 import actorPlugin from './plugins/actor.js';
@@ -42,6 +43,7 @@ export async function buildApp(
   eventBus?: LiveEventBus,
   getSchedulerStatus?: () => 'running' | 'stopped',
   adapterRegistry?: AdapterRegistry,
+  runningProcesses?: Map<string, ProcessHandle>,
 ) {
   const bus = eventBus ?? createLiveEventBus();
 
@@ -76,7 +78,7 @@ export async function buildApp(
       await api.register(companyRoutes, { db });
       await api.register(agentRoutes, { db });
       await api.register(projectRoutes, { db });
-      await api.register(issueRoutes, { db });
+      await api.register(issueRoutes, { db, runningProcesses });
       await api.register(goalRoutes, { db });
       await api.register(heartbeatRoutes, { db });
       await api.register(activityRoutes, { db });

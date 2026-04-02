@@ -98,7 +98,17 @@ export async function releaseAndPromote(
   // 1. Release the lock
   await releaseIssue(db, issueId);
 
-  // 2. Find deferred runs that reference this issue
+  // 2. Skip promotion for cancelled issues
+  const [issue] = await db
+    .select({ status: issues.status })
+    .from(issues)
+    .where(eq(issues.id, issueId));
+
+  if (issue?.status === 'cancelled') {
+    return [];
+  }
+
+  // 4. Find deferred runs that reference this issue
   const deferredRuns = await db
     .select({ id: heartbeatRuns.id, status: heartbeatRuns.status })
     .from(heartbeatRuns)
